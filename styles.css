@@ -14,7 +14,7 @@
 html,body{margin:0;min-height:100%;font-family:Vazirmatn,system-ui,sans-serif;background:var(--bg);color:var(--text)}
 body{overscroll-behavior:none}
 button{font:inherit;color:inherit}
-.app-shell{width:100%;max-width:560px;height:100dvh;margin:auto;overflow:hidden;position:relative;background:var(--bg)}
+.app-shell{width:100%;max-width:560px;height:100vh;height:100dvh;margin:auto;overflow:hidden;position:relative;background:var(--bg)}
 .topbar{height:76px;padding:env(safe-area-inset-top) 20px 0;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);background:var(--bg);position:relative;z-index:5}
 .brand{display:flex;align-items:center;gap:11px;direction:ltr}
 .brand-mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:var(--accent);background:linear-gradient(145deg,var(--surface-2),var(--surface));box-shadow:inset 0 0 0 1px var(--border)}
@@ -23,7 +23,7 @@ button{font:inherit;color:inherit}
 .brand-subtitle{font-size:10px;color:var(--muted);margin-top:1px;direction:rtl;text-align:left}
 .theme-toggle{width:40px;height:40px;border:1px solid var(--border);background:var(--surface);border-radius:13px;display:grid;place-items:center;cursor:pointer;box-shadow:var(--shadow)}
 .theme-toggle .icon{width:18px;height:18px}.theme-toggle .moon{display:none}.light .theme-toggle .sun{display:none}.light .theme-toggle .moon{display:block}
-.viewport{height:calc(100dvh - 76px - 88px);position:relative;touch-action:pan-y;overflow:hidden}
+.viewport{height:calc(100vh - 76px - 88px);height:calc(100dvh - 76px - 88px);position:relative;touch-action:pan-y;overflow:hidden}
 .page{position:absolute;inset:0;padding:25px 20px 35px;opacity:0;transform:translate3d(0,0,0);pointer-events:none;transition:transform .36s cubic-bezier(.22,.8,.25,1),opacity .26s ease;overflow:auto}
 .page.active{opacity:1;transform:translate3d(0,0,0);pointer-events:auto}
 .placeholder{min-height:70%;display:grid;place-content:center;text-align:center;color:var(--muted)}
