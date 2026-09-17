@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#071426" />
+  <meta name="description" content="Finance Management — مدیریت مالی شخصی" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="48x48" href="favicon-48.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Finance Management</title>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 10.2 12 4l8 6.2v8.3a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-8.3Z" stroke="currentColor" stroke-width="1.7"/>
+            <path d="M8 14h8M8 17h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div>
+          <div class="brand-title">Finance Management</div>
+          <div class="brand-subtitle">مدیریت مالی</div>
+        </div>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="تغییر حالت نمایش">
+        <svg class="icon sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <svg class="icon moon" viewBox="0 0 24 24" fill="none"><path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.2 8.2 0 1 0 20 15.2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
+
+    <main class="viewport" id="viewport">
+      <section class="page" data-page="calendar">
+  <div class="calendar-head"><div><span class="section-kicker">رویدادها</span><h1>تقویم مالی</h1></div><button class="today-btn" id="todayBtn">امروز</button></div>
+  <div class="calendar-card">
+    <div class="month-bar"><button class="month-arrow" id="prevMonth">‹</button><div class="month-title" id="monthTitle"></div><button class="month-arrow" id="nextMonth">›</button></div>
+    <div class="weekdays"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+    <div class="legend"><span><i class="dot payment"></i>پرداخت</span><span><i class="dot income"></i>دریافت</span><span><i class="dot installment"></i>قسط</span><span><i class="dot reminder"></i>یادآوری</span><span><i class="dot trade"></i>خرید/فروش</span></div>
+  </div>
+  <div class="events-section">
+    <div class="events-toolbar"><div><span class="section-kicker">برنامه مالی</span><h2>رویدادها</h2></div><button class="filter-toggle" id="filterToggle">☷</button></div>
+    <div class="filters open" id="filters">
+      <div class="search-wrap"><span>⌕</span><input id="eventSearch" type="search" placeholder="جستجوی رویداد، نام، توضیح..." autocomplete="off"></div>
+      <div class="filter-row"><button class="chip active" data-filter="all">همه</button><button class="chip" data-filter="payment">پرداخت</button><button class="chip" data-filter="income">دریافت</button><button class="chip" data-filter="installment">قسط</button><button class="chip" data-filter="reminder">یادآوری</button><button class="chip" data-filter="trade">خرید/فروش</button></div>
+      <div class="filter-row"><button class="chip active" data-sort="date-desc">جدیدترین</button><button class="chip" data-sort="date-asc">قدیمی‌ترین</button><button class="chip" data-sort="amount-desc">مبلغ بیشتر</button></div>
+    </div>
+    <div class="events-list" id="eventsList"></div><div class="empty-events" id="emptyEvents" hidden><div>◌</div><strong>رویدادی پیدا نشد</strong><span>فیلتر یا عبارت جستجو را تغییر بده.</span></div>
+  </div>
+</section>
+
+      <section class="page" data-page="settings">
+        <div class="fm-page-head"><div><span class="section-kicker">تنظیمات</span><h1>تنظیمات برنامه</h1></div></div>
+        <div class="fm-settings-hub">
+          <section class="fm-settings-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">⚙</span><div><h2>عمومی</h2><small>تنظیمات پایه و بروزرسانی</small></div></div><div class="fm-setting-row"><div><b>بروزرسانی خودکار قیمت‌ها</b><small>فاصله استعلام مجدد قیمت‌ها را به ساعت مشخص کن.</small></div><div class="fm-hour-input"><input id="fmRefreshHours" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="1"><span>ساعت</span></div></div><button class="fm-save-setting" id="fmSaveSettings">ذخیره تنظیمات</button></section>
+          <section class="fm-settings-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">↗</span><div><h2>API و قیمت‌ها</h2><small>اتصال، کلید و مدیریت شاخص‌های نوار قیمت</small></div></div><label class="fm-setting-field"><span>آدرس API قیمت‌ها</span><input id="fmApiUrl" type="url" placeholder="آدرس API خودت را وارد کن"></label><label class="fm-setting-field"><span>کلید API / Token</span><input id="fmApiKey" type="text" placeholder="در صورت نیاز وارد کن"></label><div class="fm-setting-note">در صورت پشتیبانی API می‌توانی از <b>{keyword}</b> برای جایگزینی کلمه کلیدی استفاده کنی.</div><button class="fm-secondary-setting fm-wide-setting" id="fmMarketSettings">مدیریت شاخص‌ها و کلمات کلیدی</button></section>
+          <section class="fm-settings-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">↥</span><div><h2>پشتیبان‌گیری</h2><small>ذخیره یا انتقال اطلاعات برنامه</small></div></div><div class="fm-backup-actions"><button class="fm-secondary-setting" id="fmBackupExport">گرفتن بکاپ JSON</button><button class="fm-secondary-setting" id="fmBackupImport">وارد کردن بکاپ</button></div><input id="fmBackupFile" type="file" accept="application/json,.json" hidden></section>
+          <section class="fm-settings-group fm-about-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">ⓘ</span><div><h2>درباره برنامه</h2><small>اطلاعات نسخه</small></div></div><div class="fm-version-row"><span>نسخه برنامه</span><strong id="fmAppVersion">2.8.1</strong></div></section>
+        </div>
+      </section>
+
+      <section class="page dashboard-page" data-page="dashboard">
+        <div class="fm-dashboard-head"><div><span class="section-kicker">خانه</span><h1>نمای کلی دارایی‌ها</h1></div><span class="fm-last-update" id="fmLastUpdate">قیمت‌ها هنوز بروزرسانی نشده‌اند</span></div>
+        <div class="fm-summary-grid">
+          <article class="fm-summary-card total"><button class="fm-eye-btn" id="fmPrivacyToggle" type="button" aria-label="مخفی کردن مبالغ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.2 12s3.7-6 9.8-6 9.8 6 9.8 6-3.7 6-9.8 6-9.8-6-9.8-6Z"/><circle cx="12" cy="12" r="2.7"/></svg></button><span class="fm-card-label">مجموع کل دارایی</span><strong id="fmTotalToman">۰ تومان</strong><div class="fm-sub-values"><span><b id="fmTotalDollar">—</b><small>دلار</small></span><span><b id="fmTotalGold">—</b><small>گرم طلای ۱۸</small></span></div></article>
+          <article class="fm-summary-card pnl"><span class="fm-card-label">سود / زیان دارایی</span><strong id="fmPnlValue">—</strong><div class="fm-pnl-rate" id="fmPnlRate">—</div><div class="fm-segment" id="fmPnlTabs"><button class="active" data-pnl-period="daily">دیروز</button><button data-pnl-period="monthly">ماهانه</button><button data-pnl-period="cumulative">تجمعی</button></div></article>
+        </div>
+        <section class="fm-market-wrap"><div class="fm-market-track" id="fmMarketTrack"></div></section>
+        <button class="fm-refresh" id="fmRefreshPrices" type="button"><span>↻</span> بروزرسانی قیمت‌ها</button>
+        <section class="fm-chart-card" id="fmChartCard"><div class="fm-section-head"><div><span class="section-kicker">روند پرتفوی</span><h2>رشد دارایی</h2></div><div class="fm-chart-head-actions"><div class="fm-segment compact" id="fmChartTabs"><button class="active" data-chart-unit="toman">تومان</button><button data-chart-unit="dollar">دلار</button><button data-chart-unit="gold">طلای ۱۸</button></div><button type="button" class="fm-collapse-btn" id="fmChartToggle" aria-label="مخفی کردن نمودار">⌄</button></div></div><div class="fm-chart-body"><div class="fm-chart-wrap"><canvas id="fmGrowthChart"></canvas><div class="fm-chart-empty" id="fmChartEmpty">با ثبت ارزش دارایی‌ها، نمودار رشد پرتفوی اینجا نمایش داده می‌شود.</div></div></div></section>
+        <section class="fm-assets-section">
+          <div id="fmDashboardTools" class="fm-dashboard-tools"><div class="fm-search-toolbar"><div class="fm-live-search"><span>⌕</span><input id="fmAssetSearch" type="search" placeholder="جستجوی زنده در دارایی‌ها..." autocomplete="off"><button id="fmAssetSearchClear" type="button">×</button></div><button type="button" class="fm-collapse-btn fm-tools-toggle" id="fmDashboardToolsToggle" aria-label="مخفی کردن جستجو و فیلتر">×</button></div>
+          <div class="fm-filter-panel fm-collapsible-panel" id="fmFilterPanel"><select id="fmCategoryFilter"><option value="all">همه دسته‌ها</option></select><select id="fmSourceFilter"><option value="all">همه قیمت‌ها</option><option value="api">اتوماتیک / API</option><option value="manual">دستی</option></select></div>
+          <div class="fm-sort-panel fm-collapsible-panel" id="fmSortPanel"><button data-sort-assets="value-desc" class="active">ارزش بیشتر</button><button data-sort-assets="value-asc">ارزش کمتر</button><button data-sort-assets="name">نام</button><button data-sort-assets="category">دسته</button></div></div>
+          <div class="fm-assets-title-row"><div><span class="section-kicker">پرتفوی</span><h2>دارایی‌های من</h2></div><div class="fm-view-options"><div class="fm-segment compact" id="fmNumberTabs"><button class="active" data-number-mode="exact">دقیق</button><button data-number-mode="million">میلیونی</button></div><div class="fm-segment compact" id="fmViewTabs"><button class="active" data-assets-view="list">☷ لیست</button><button data-assets-view="donut">◉ نمودار</button></div></div></div>
+          <div class="fm-actions-row"><button class="fm-action-card" id="fmManageCategories"><span>◈</span><b>مدیریت دسته‌بندی</b></button><button class="fm-action-card primary" id="fmAddAsset"><span>＋</span><b>افزودن دارایی</b></button><button class="fm-clock-btn" id="fmTransactions" type="button" aria-label="تراکنش‌ها">◷</button></div>
+          <div id="fmAssetsList"></div><div id="fmDonutView" hidden></div>
+        </section>
+      </section>
+      <section class="page car-page" data-page="car">
+        <div class="car-head">
+          <div><span class="section-kicker">سرمایه‌گذاری و معاملات</span><h1>خودرو</h1></div>
+          <div class="car-head-actions"><button class="car-profit-btn" id="carCumulativeBtn">سود تجمعی من</button><button class="car-weighted-btn" id="carWeightedBtn">محاسبه وزنی</button><button class="primary-action" id="addCarBtn">＋ ثبت خودرو</button></div>
+        </div>
+        <div class="car-status-tabs" role="tablist" aria-label="وضعیت خودرو">
+          <button class="car-status-tab active" data-car-status-tab="active" role="tab" aria-selected="true">فعال <span id="activeCarCount">۰</span></button>
+          <button class="car-status-tab" data-car-status-tab="sold" role="tab" aria-selected="false">فروخته شده <span id="soldCarCount">۰</span></button>
+        </div>
+        <div class="car-kpis" id="carKpis"></div>
+        <div class="car-search-row"><div class="car-search"><span>⌕</span><input id="carSearch" type="search" placeholder="جستجو نام خودرو، مالک، کد ملی، درخواست..." autocomplete="off"><button id="carSearchClear" aria-label="پاک کردن">×</button></div></div>
+        <div class="car-status-section" id="activeCarSection"><div class="cars-list" id="activeCarsList"></div><div class="car-empty" id="activeCarEmpty" hidden>خودروی فعالی ثبت نشده است.</div></div>
+        <div class="car-status-section sold-section" id="soldCarSection" hidden><div class="cars-list" id="soldCarsList"></div><div class="car-empty" id="soldCarEmpty" hidden>هنوز معامله فروخته‌شده‌ای ثبت نشده است.</div></div>
+
+        <div class="car-modal" id="carFormModal" aria-hidden="true"><div class="car-sheet car-form-sheet"><div class="sheet-header"><div><span class="section-kicker" id="carFormKicker">ثبت اطلاعات</span><h2 id="carFormTitle">خودرو جدید</h2></div><button class="sheet-close" id="carFormClose">×</button></div>
+          <form id="carForm" autocomplete="off"><input type="hidden" id="carId">
+            <div class="car-form-section"><div class="car-form-section-title">اطلاعات اصلی</div><div class="form-grid two">
+              <label><span>نام خودرو</span><input id="carName" required placeholder="مثلاً پژو ۲۰۷ اتومات"></label>
+              <label><span>خودروساز / شرکت</span><input id="carCompany" placeholder="مثلاً ایران‌خودرو"></label>
+            </div><div class="form-grid two">
+              <label><span>نوع فروش</span><select id="carSaleType"><option value="فوری">فروش فوری</option><option value="فوق‌العاده">فروش فوق‌العاده</option><option value="پیش‌فروش">پیش‌فروش</option><option value="مشارکت در تولید">مشارکت در تولید</option></select></label>
+              <label><span>قیمت کارخانه</span><input id="carFactoryPrice" class="amount-input" inputmode="numeric" placeholder="تومان"></label>
+            </div><div class="form-grid two">
+              <label><span>نام ثبت‌نام‌کننده / مالک</span><input id="carOwnerName" required></label>
+              <label><span>کد ملی <small>(کلیک برای کپی)</small></span><div class="copyable-input"><input id="carNationalId" inputmode="numeric" maxlength="10"><button type="button" data-copy-input="carNationalId">کپی</button></div></label>
+            </div><div class="form-grid two">
+              <label><span>شماره درخواست <small>(کلیک برای کپی)</small></span><div class="copyable-input"><input id="carRequestNo"><button type="button" data-copy-input="carRequestNo">کپی</button></div></label>
+              <label><span>شماره پذیرش <small>(کلیک برای کپی)</small></span><div class="copyable-input"><input id="carAdmissionNo"><button type="button" data-copy-input="carAdmissionNo">کپی</button></div></label>
+            </div></div>
+
+            <div class="car-form-section"><div class="car-form-section-title">زمان‌بندی و تأخیر</div><div class="form-grid three">
+              <label class="jalali-car-date"><span>تاریخ ثبت‌نام</span><div class="car-date-wrap"><input id="carRegisterDate" inputmode="numeric" placeholder="مثلاً ۱۴۰۵-۰۶-۲۱"><button type="button" data-date-target="carRegisterDate">▦</button></div></label>
+              <label class="jalali-car-date"><span>موعد تحویل</span><div class="car-date-wrap"><input id="carDeliveryDate" inputmode="numeric" placeholder="مثلاً ۱۴۰۵-۰۷-۲۱"><button type="button" data-date-target="carDeliveryDate">▦</button></div></label>
+              <label><span>درصد جریمه تأخیر ماهانه</span><input id="carDelayRate" inputmode="decimal" placeholder="مثلاً ۲.۵"></label>
+            </div><div class="form-grid three">
+              <label><span>مدت تأخیر (روز)</span><input id="carDelayDays" inputmode="numeric" readonly></label>
+              <label><span>جریمه تأخیر محاسبه‌شده</span><input id="carDelayProfit" class="amount-input" inputmode="numeric" readonly></label>
+              <label><span>مبنای جریمه</span><select id="carDelayBase"><option value="factory">قیمت کارخانه</option><option value="payments">مجموع پرداختی‌ها</option><option value="custom">مبلغ پایه دستی</option></select></label>
+            </div><label id="carDelayCustomWrap" class="full-label" hidden><span>مبلغ پایه دستی جریمه</span><input id="carDelayCustom" class="amount-input" inputmode="numeric"></label></div>
+
+            <div class="car-form-section"><div class="car-form-section-title">وضعیت معامله و فروش</div><div class="form-grid two">
+              <label><span>وضعیت خودرو</span><select id="carStatus"><option value="active">فعال</option><option value="sold">فروخته شده</option></select></label>
+              <label><span>قیمت بازار / فروش</span><input id="carMarketPrice" class="amount-input" inputmode="numeric" placeholder="برای سود بالقوه یا مبلغ فروش"></label>
+            </div><div class="form-grid two">
+              <label class="jalali-car-date"><span>تاریخ تحویل</span><div class="car-date-wrap"><input id="carDeliveryActual" inputmode="numeric" placeholder="در صورت تحویل"><button type="button" data-date-target="carDeliveryActual">▦</button></div></label>
+              <label class="jalali-car-date"><span>تاریخ فروش</span><div class="car-date-wrap"><input id="carSaleDate" inputmode="numeric" placeholder="در صورت فروش"><button type="button" data-date-target="carSaleDate">▦</button></div></label>
+            </div></div>
+
+            <div class="car-form-section"><div class="car-form-section-title">شرکا</div><div id="carPartnersEditor"></div><button type="button" class="outline-action" id="addPartnerBtn">＋ افزودن شریک</button><p class="form-hint">در حالت پیش‌فرض سهم هر شریک بر اساس آورده او از کل آورده معامله محاسبه می‌شود.</p></div>
+            <label class="full-label"><span>یادداشت</span><textarea id="carNotes" rows="3" placeholder="شرایط معامله، حواله، توضیحات و..."></textarea></label>
+            <div class="form-actions"><button type="button" class="secondary-action" id="carCancel">انصراف</button><button type="submit" class="primary-action">ذخیره خودرو</button></div>
+          </form></div></div>
+
+        <div class="car-modal car-detail-modal" id="carDetailModal" aria-hidden="true"><div class="car-sheet car-detail-sheet"><div class="sheet-header"><div><span class="section-kicker">پرونده خودرو</span><h2 id="carDetailTitle">—</h2></div><button class="sheet-close" id="carDetailClose">×</button></div><div id="carDetailBody"></div></div></div>
+        <div class="car-modal" id="carCumulativeModal" aria-hidden="true"><div class="car-sheet cumulative-sheet"><div class="sheet-header"><div><span class="section-kicker">گزارش سهم من</span><h2>سود تجمعی معاملات</h2></div><button class="sheet-close" id="carCumulativeClose">×</button></div><div id="cumulativeBody"></div></div></div><div class="car-modal" id="carWeightedModal" aria-hidden="true"><div class="car-sheet weighted-sheet"><div class="sheet-header"><div><span class="section-kicker">ماشین‌حساب</span><h2>محاسبه وزنی خواب پول</h2></div><button class="sheet-close" id="carWeightedClose">×</button></div><div class="weighted-body"><div class="weighted-intro">برای هر مرحله مبلغ و تاریخ پرداخت را وارد کن. این ماشین‌حساب چیزی را در اطلاعات خودرو ذخیره نمی‌کند.</div><label><span>خودرو</span><select id="weightedCarSelect"><option value="">بدون اتصال به خودرو</option></select></label><div class="weighted-spacer"></div><div class="form-grid two"><label class="jalali-car-date"><span>تاریخ تحویل</span><div class="car-date-wrap"><input id="weightedDeliveryDate" inputmode="numeric" value=""><button type="button" id="weightedDeliveryPicker" data-date-target="weightedDeliveryDate">▦</button></div></label><div class="weighted-summary"><span>کل مدت انتظار</span><b id="weightedDays">۰ روز</b></div></div><div class="weighted-section-head"><b>مراحل پرداخت</b><button type="button" class="outline-action" id="weightedAddStage">＋ مرحله</button></div><div id="weightedStages"></div><div class="weighted-results"><div><span>مجموع پرداخت</span><b id="weightedTotal">۰ تومان</b></div><div><span>مبلغ وزنی</span><b id="weightedAverage">۰ تومان</b></div></div><div class="weighted-partners" id="weightedPartners"></div><div class="weighted-formula"><span>فرمول</span><b id="weightedFormula">—</b></div></div></div></div>
+        <div class="car-modal" id="carReceiptModal" aria-hidden="true"><div class="car-sheet receipt-sheet"><div class="sheet-header"><div><span class="section-kicker">رسید تراکنش</span><h2 id="receiptTitle">—</h2></div><button class="sheet-close" id="receiptClose">×</button></div><div id="receiptBody"></div></div></div>
+        <div class="car-modal" id="carNoteModal" aria-hidden="true"><div class="car-sheet car-note-sheet"><div class="sheet-header"><div><span class="section-kicker">یادداشت خودرو</span><h2 id="carNoteTitle">—</h2></div><button class="sheet-close" id="carNoteClose">×</button></div><div class="car-note-page"><textarea id="carNoteInput" rows="12" placeholder="یادداشت‌های این خودرو را اینجا بنویس..."></textarea><div class="form-actions"><button type="button" class="secondary-action" id="carNoteCancel">انصراف</button><button type="button" class="primary-action" id="carNoteSave">ذخیره یادداشت</button></div></div></div></div>
+        <div class="car-date-pop" id="carDatePicker" hidden><div class="car-date-head"><button id="carDatePrev">‹</button><strong id="carDateTitle"></strong><button id="carDateNext">›</button></div><div class="car-date-week"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div><div class="car-date-grid" id="carDateGrid"></div></div>
+      </section>
+
+      <section class="page loan-page" data-page="loan">
+  <div class="loan-head">
+    <div><span class="section-kicker">مدیریت بدهی</span><h1>وام‌ها</h1></div>
+    <div class="loan-head-actions">
+      <button class="icon-action" id="loanNotifyBtn" aria-label="اعلان وام">♢</button><button class="icon-action" id="loanCalculatorBtn" aria-label="محاسبه‌گر">⌁</button>
+      <button class="primary-action" id="addLoanBtn"><span>＋</span> وام جدید</button>
+    </div>
+  </div>
+  <div class="loan-summary" id="loanSummary"></div>
+  <div class="loan-view-tools" id="loanViewTools">
+    <div class="loan-view-tool">
+      <label for="loanStatusFilter">نمایش</label>
+      <select id="loanStatusFilter" aria-label="فیلتر وضعیت وام">
+        <option value="all">همه وام‌ها</option>
+        <option value="overdue">معوقه</option>
+        <option value="soon">نزدیک به سررسید</option>
+        <option value="ok">در موعد</option>
+      </select>
+    </div>
+    <div class="loan-view-tool">
+      <label for="loanSort">مرتب‌سازی</label>
+      <select id="loanSort" aria-label="مرتب‌سازی وام‌ها">
+        <option value="due">نزدیک‌ترین زمان قسط</option>
+        <option value="installmentDesc">بیشترین مبلغ قسط</option>
+        <option value="installmentAsc">کمترین مبلغ قسط</option>
+        <option value="totalDesc">بیشترین مبلغ وام</option>
+        <option value="totalAsc">کمترین مبلغ وام</option>
+        <option value="overdueDesc">بیشترین معوقه</option>
+        <option value="paidDesc">بیشترین اقساط پرداخت‌شده</option>
+      </select>
+    </div>
+  </div>
+  <div class="loan-view-count" id="loanViewCount"></div>
+  <div class="loans-list" id="loansList"></div>
+  <div class="loan-empty" id="loanEmpty" hidden>
+    <div class="loan-empty-icon">₿</div><strong>هنوز وامی ثبت نشده</strong>
+    <span>وام‌هایت را ثبت کن تا اقساط، سررسیدها و پیشرفت پرداخت را یکجا ببینی.</span>
+    <button class="primary-action" id="loanEmptyAdd">＋ ثبت اولین وام</button>
+  </div>
+
+  <div class="loan-modal" id="loanFormModal" aria-hidden="true">
+    <div class="loan-sheet">
+      <div class="sheet-header"><div><span class="section-kicker" id="loanFormKicker">ثبت اطلاعات</span><h2 id="loanFormTitle">وام جدید</h2></div><button class="sheet-close" id="loanFormClose">×</button></div>
+      <form id="loanForm" autocomplete="off">
+        <input type="hidden" id="loanId">
+        <div class="form-grid two">
+          <label><span>نام بانک / موسسه</span><input id="loanBank" required placeholder="مثلاً بانک ملت"></label>
+          <label><span>نام وام‌گیرنده</span><input id="loanBorrower" required placeholder="نام و نام خانوادگی"></label>
+        </div>
+        <div class="form-grid two">
+          <label><span>مبلغ کل وام</span><input id="loanTotal" inputmode="numeric" required placeholder="تومان"></label>
+          <label><span>مبلغ هر قسط</span><input id="loanInstallment" inputmode="numeric" required placeholder="تومان"></label>
+        </div>
+        <div class="form-grid three">
+          <label><span>تعداد کل اقساط</span><input id="loanCount" inputmode="numeric" required placeholder="مثلاً 60"></label>
+          <label><span>اقساط پرداخت‌شده</span><input id="loanPaid" inputmode="numeric" value="0"></label>
+          <label class="jalali-date-field"><span>سررسید بعدی</span><div class="jalali-date-wrap"><input id="loanNextDueDisplay" type="text" inputmode="none" readonly required placeholder="مثلاً ۲۱ شهریور"><input id="loanNextDue" type="hidden"><button type="button" class="date-picker-btn" id="loanDatePickerBtn" aria-label="انتخاب تاریخ">▦</button></div><div class="jalali-picker" id="loanJalaliPicker" hidden><div class="jp-head"><button type="button" id="jpPrev">‹</button><strong id="jpTitle"></strong><button type="button" id="jpNext">›</button></div><div class="jp-week"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div><div class="jp-grid" id="jpGrid"></div></div></label>
+        </div>
+        <div class="form-grid two">
+          <label><span>تعداد اقساط معوقه</span><input id="loanOverdueCount" inputmode="numeric" value="0"></label>
+          <label><span>مبلغ معوقه</span><input id="loanOverdueAmount" inputmode="numeric" value="0" placeholder="تومان"></label>
+        </div>
+        <div class="form-grid two">
+          <label><span>نرخ سود سالانه</span><input id="loanRate" inputmode="decimal" value="23" placeholder="درصد"></label>
+          <label><span>مدت وام</span><input id="loanTerm" placeholder="مثلاً 5 سال"></label>
+        </div>
+        <div class="loan-section-title">اطلاعات پرداخت</div>
+        <div class="copy-field-row"><label><span>شماره کارت</span><input id="loanCard" inputmode="numeric" placeholder="16 رقم کارت"></label><label class="switch-row"><input id="showCard" type="checkbox" checked><span class="switch"></span><b>نمایش</b></label></div>
+        <div class="copy-field-row"><label><span>شماره شبا</span><input id="loanIban" placeholder="IR..."></label><label class="switch-row"><input id="showIban" type="checkbox" checked><span class="switch"></span><b>نمایش</b></label></div>
+        <div class="copy-field-row"><label><span>شماره حساب</span><input id="loanAccount" inputmode="numeric" placeholder="شماره حساب"></label><label class="switch-row"><input id="showAccount" type="checkbox" checked><span class="switch"></span><b>نمایش</b></label></div>
+        <label class="full-label"><span>یادداشت</span><textarea id="loanNotes" rows="3" placeholder="ضمانت، شعبه، شرایط خاص و..." ></textarea></label>
+        <label class="active-loan-row"><input id="loanActive" type="checkbox" checked><span class="switch"></span><span><b>وام فعال</b><small>در صورت غیرفعال بودن، در فهرست نمایش داده نمی‌شود.</small></span></label>
+        <div class="form-actions"><button type="button" class="secondary-action" id="loanCancel">انصراف</button><button type="submit" class="primary-action">ذخیره وام</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="loan-modal" id="loanDetailModal" aria-hidden="true"><div class="loan-sheet detail-sheet"><div class="sheet-header"><div><span class="section-kicker">جزئیات وام</span><h2 id="detailLoanTitle">—</h2></div><button class="sheet-close" id="loanDetailClose">×</button></div><div id="loanDetailsBody"></div></div></div>
+  <div class="loan-modal" id="loanNoteModal" aria-hidden="true"><div class="loan-sheet note-sheet"><div class="sheet-header"><div><span class="section-kicker">یادداشت</span><h2 id="noteLoanTitle">—</h2></div><button class="sheet-close" id="loanNoteClose">×</button></div><textarea id="noteInput" rows="7" placeholder="یادداشت خودت را بنویس..."></textarea><div class="form-actions"><button class="secondary-action" id="noteCancel">انصراف</button><button class="primary-action" id="noteSave">ذخیره یادداشت</button></div></div></div>
+  <div class="loan-modal" id="loanPaidModal" aria-hidden="true"><div class="loan-sheet paid-sheet"><div class="sheet-header"><div><span class="section-kicker">ثبت تراکنش</span><h2 id="loanPaidModalTitle">ثبت مبلغ پرداخت‌شده</h2></div><button class="sheet-close" id="loanPaidClose">×</button></div><div class="paid-modal-intro"><b id="loanPaidMonthHint">—</b><span>فقط مبلغی را که واقعاً پرداخت کرده‌ای وارد کن. تاریخ امروز فقط به عنوان تاریخ ثبت تراکنش ذخیره می‌شود و وضعیت وام به‌صورت خودکار محاسبه خواهد شد.</span></div><label class="paid-amount-field"><span>مبلغ پرداخت‌شده</span><div class="paid-amount-wrap"><input id="loanPaymentAmount" inputmode="numeric" autocomplete="off" placeholder="مبلغ را به تومان وارد کنید"><small>تومان</small></div></label><div class="form-actions"><button type="button" class="secondary-action" id="loanPaidCancel">انصراف</button><button type="button" class="primary-action" id="loanPaidConfirm">ثبت پرداخت</button></div></div></div>
+
+  <div class="loan-modal" id="calcModal" aria-hidden="true"><div class="loan-sheet calculator-sheet"><div class="sheet-header"><div><span class="section-kicker">ابزار مالی</span><h2>محاسبه‌گر وام</h2></div><button class="sheet-close" id="calcClose">×</button></div>
+    <div class="calc-tabs"><button class="active" data-calc="installment">قسط وام</button><button data-calc="deposit">وام روی سپرده</button><button data-calc="capacity">سقف وام</button></div>
+    <div class="calc-panel active" data-panel="installment"><div class="calc-grid"><label><span>مبلغ وام</span><input class="calc-input" id="calcPrincipal" inputmode="numeric" placeholder="تومان"></label><label><span>نرخ سالانه</span><input class="calc-input" id="calcRate" inputmode="decimal" value="23"></label><label><span>مدت (سال)</span><input class="calc-input" id="calcYears" inputmode="numeric" value="5"></label></div><div class="calc-result" id="calcInstallmentResult">مبلغ قسط ماهانه: —</div></div>
+    <div class="calc-panel" data-panel="deposit"><div class="calc-grid"><label><span>مبلغ سپرده</span><input class="calc-input" id="depositAmount" inputmode="numeric" placeholder="تومان"></label><label><span>درصد سقف نسبت به سپرده</span><input class="calc-input" id="depositRatio" inputmode="decimal" value="80"></label><label><span>نرخ سالانه وام</span><input class="calc-input" id="depositRate" inputmode="decimal" value="23"></label><label><span>مدت (سال)</span><input class="calc-input" id="depositYears" inputmode="numeric" value="3"></label></div><div class="calc-result" id="calcDepositResult">سقف وام: —</div></div>
+    <div class="calc-panel" data-panel="capacity"><div class="calc-grid"><label><span>حداکثر قسط ماهانه</span><input class="calc-input" id="capacityPayment" inputmode="numeric" placeholder="تومان"></label><label><span>نرخ سالانه</span><input class="calc-input" id="capacityRate" inputmode="decimal" value="23"></label><label><span>حداکثر مدت</span><select class="calc-input" id="capacityYears"><option value="1">1 سال</option><option value="2">2 سال</option><option value="3">3 سال</option><option value="4">4 سال</option><option value="5" selected>5 سال</option></select></label></div><div class="capacity-results" id="capacityResults"></div></div>
+  </div></div>
+</section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="ناوبری اصلی">
+      <button class="nav-item" data-target="settings" aria-label="تنظیمات">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M12 8.4a3.6 3.6 0 1 0 0 7.2 3.6 3.6 0 0 0 0-7.2Z" stroke="currentColor" stroke-width="1.7"/><path d="m19.1 13.3 1.1.85-1.8 3.1-1.3-.55a8 8 0 0 1-1.45.84L15.5 19h-3.6l-.15-1.45a8 8 0 0 1-1.45-.84l-1.3.55-1.8-3.1 1.1-.85a7.6 7.6 0 0 1 0-1.7l-1.1-.85 1.8-3.1 1.3.55A8 8 0 0 1 11.6 7.4L11.75 6h3.6l.15 1.4a8 8 0 0 1 1.45.85l1.3-.55 1.8 3.1-1.1.85a7.6 7.6 0 0 1 0 1.65Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></svg></span>
+      </button>
+      <button class="nav-item" data-target="calendar" aria-label="تقویم">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5.5" width="16" height="14" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M8 3.8v3.4M16 3.8v3.4M4 9.5h16M8 13h2M14 13h2M8 16h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+      </button>
+      <button class="nav-item nav-home active" data-target="dashboard" aria-label="داشبورد">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none"><path d="m4 10.6 8-6.3 8 6.3v8.1a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 18.7v-8.1Z" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M9.2 20.3v-5.7h5.6v5.7" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg></span>
+      </button>
+      <button class="nav-item" data-target="car" aria-label="خودرو">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none"><path d="m5 11 1.7-4.1A2 2 0 0 1 8.55 5.7h6.9a2 2 0 0 1 1.85 1.2L19 11l1.2 1.1a1.8 1.8 0 0 1 .55 1.3v3.1a1 1 0 0 1-1 1h-1.2a1 1 0 0 1-1-1v-.6H6.45v.6a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1v-3.1a1.8 1.8 0 0 1 .55-1.3L5 11Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M6.1 11h11.8M7 14.1h.01M17 14.1h.01" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></span>
+      </button>
+      <button class="nav-item" data-target="loan" aria-label="وام">
+        <span class="nav-icon"><span class="loan-nav-badge" id="loanNavBadge" hidden></span><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="14" rx="2.2" stroke="currentColor" stroke-width="1.7"/><path d="M7 9h10M8 13h2M14 13h2M8 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span>
+      </button>
+    </nav>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
