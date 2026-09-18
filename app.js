@@ -6,6 +6,15 @@
   const viewport = document.getElementById('viewport');
   const themeToggle = document.getElementById('themeToggle');
 
+  // Keep vehicle/loan overlays outside transformed tab pages so each opened screen
+  // behaves as an independent full-screen sheet with one scroll container.
+  const appShell = document.querySelector('.app-shell');
+  if (appShell) {
+    document.querySelectorAll('.car-modal,.loan-modal').forEach(modal => {
+      if (modal.parentElement !== appShell) appShell.appendChild(modal);
+    });
+  }
+
   // This is the single source of truth for navigation.
   // Left -> right: Settings, Calendar, Dashboard, Car, Loan.
   const order = ['settings', 'calendar', 'dashboard', 'car', 'loan'];
@@ -19,6 +28,15 @@
   function syncSelection() {
     navItems.forEach(item => {
       item.classList.toggle('active', item.dataset.target === order[currentIndex]);
+    });
+  }
+
+  function closeOpenOverlays() {
+    const open = document.querySelectorAll('.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open');
+    if (open.length) window.__financeNavSuppressOverlayHistory = true;
+    open.forEach(m => {
+      m.classList.remove('open');
+      m.setAttribute('aria-hidden', 'true');
     });
   }
 
@@ -37,6 +55,8 @@
     newPage.scrollTop = 0;
 
     isAnimating = true;
+    currentIndex = nextIndex;
+    syncSelection();
 
     // direction = 1 means left swipe: new page enters from right -> left.
     // direction = -1 means right swipe: new page enters from left -> right.
@@ -71,9 +91,6 @@
       newPage.style.transform = '';
       newPage.style.opacity = '';
 
-      currentIndex = nextIndex;
-      syncSelection();
-      window.dispatchEvent(new CustomEvent('finance-tab-changed',{detail:{name:order[currentIndex]}}));
       isAnimating = false;
     }, 380);
   }
@@ -91,9 +108,62 @@
   navItems.forEach(item => {
     item.addEventListener('click', event => {
       event.preventDefault();
-      goTo(item.dataset.target);
+      const target = item.dataset.target;
+      closeOpenOverlays();
+      if (window.__financeNavInternal) {
+        goTo(target);
+        return;
+      }
+      if (target === order[currentIndex]) return;
+      const hadOverlay = document.querySelector('.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open');
+      // The overlay belongs to the previous tab. Do not leave a stale Back step.
+      if (hadOverlay) history.replaceState({ financeTab: target }, '', location.href);
+      else history.pushState({ financeTab: target }, '', location.href);
+      goTo(target);
     });
   });
+
+  // Native mobile back behavior: modal/page first, then previous tab, then leave the app.
+  (() => {
+    const overlaySelector = '.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';
+    const currentTab = () => order[currentIndex] || 'dashboard';
+    let overlayHistory = false;
+    let historySync = false;
+
+    history.replaceState({ financeTab: currentTab(), financeRoot: true }, '', location.href);
+
+    const hasOverlay = () => document.querySelector(overlaySelector) !== null;
+    const observer = new MutationObserver(() => {
+      if (historySync) return;
+      if (window.__financeNavSuppressOverlayHistory) { window.__financeNavSuppressOverlayHistory = false; return; }
+      const open = hasOverlay();
+      if (open && !overlayHistory) {
+        overlayHistory = true;
+        history.pushState({ financeTab: currentTab(), financeOverlay: true }, '', location.href);
+      } else if (!open && overlayHistory) {
+        overlayHistory = false;
+        historySync = true;
+        history.back();
+        setTimeout(() => { historySync = false; }, 0);
+      }
+    });
+    observer.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class'] });
+
+    window.addEventListener('popstate', event => {
+      if (overlayHistory || event.state?.financeOverlay) {
+        historySync = true;
+        closeOpenOverlays();
+        overlayHistory = false;
+        setTimeout(() => { historySync = false; }, 0);
+        return;
+      }
+      const target = event.state?.financeTab;
+      if (!target || !order.includes(target)) return;
+      window.__financeNavInternal = true;
+      goTo(target);
+      window.__financeNavInternal = false;
+    });
+  })();
 
   // Horizontal tab swiping is disabled globally. Loan cards keep their own horizontal gesture.
 
@@ -119,8 +189,6 @@
   }
 
   syncSelection();
-  // The dashboard is the default tab; make its page visible immediately on first load.
-  pageFor('dashboard')?.classList.add('active');
 })();
 
 
@@ -245,7 +313,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     let startX=0,startY=0,drag=false,open=false;
     const card=wrap.querySelector('.loan-card'),actions=wrap.querySelector('.loan-actions');
     const width=()=>Math.min(150,Math.max(138,actions.offsetWidth||150));
-    function set(x,animate=true){card.style.transition=animate?'transform .42s cubic-bezier(.22,.75,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open))}
+    function set(x,animate=true){card.style.transition=animate?'transform .28s cubic-bezier(.22,.8,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open))}
     function close(){set(0,true)}
     function finish(dx){set(dx<-45?-width():0,true)}
     card.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;startX=e.touches[0].clientX;startY=e.touches[0].clientY;drag=true},{passive:true});
@@ -651,8 +719,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     syncDelay(c);
     const t=totals(c),u=userShare(c),pot=profitPotential(c),period=carProfitPeriod(c);
     const profit=c.status==='sold'?u.profit:pot*u.share;
-    // Profit percentage is based on MY capital, not the whole deal's capital.
-    const rate=u.mineCap?profit/u.mineCap*100:0;
+    const rate=t.capital?profit/t.capital*100:0;
     const monthlyProfit=period.months>0?profit/period.months:0;
     const monthlyRate=period.months>0?rate/period.months:0;
     const durationMonths=period.months;
@@ -690,7 +757,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
         else if(act==='edit')openForm(getCar(id));
         else if(act==='note')openQuickNote(getCar(id));
         else if(act==='delete')deleteCar(getCar(id));
-        else if(b.dataset.copy){const text=b.dataset.copy;const done=()=>toast('کپی شد');const fallback=()=>{const t=document.createElement('textarea');t.value=text;t.style.position='fixed';t.style.opacity='0';document.body.appendChild(t);t.select();try{document.execCommand('copy');done()}catch{}t.remove()};if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).then(done).catch(fallback);else fallback()}
+        else if(b.dataset.copy)navigator.clipboard?.writeText(b.dataset.copy);
       });
     });
   }
@@ -733,13 +800,13 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       <div class="tx-form-actions"><button type="button" class="secondary-action tx-cancel">انصراف</button><button type="button" class="primary-action tx-save">ثبت تراکنش</button></div>
     </div>`
   }
-  function detailHtml(c,activeTab='overview'){const t=totals(c),u=userShare(c),shares=shareRows(c),pot=profitPotential(c),profit=c.status==='sold'?u.profit:pot*u.share;return `<div class="car-detail-tabs"><button class="${activeTab==='overview'?'active':''}" data-tab="overview">خلاصه</button><button class="${activeTab==='ledger'?'active':''}" data-tab="ledger">دفتر حساب</button><button class="${activeTab==='tx'?'active':''}" data-tab="tx">تراکنش‌ها</button><button class="${activeTab==='partners'?'active':''}" data-tab="partners">شرکا</button></div><div class="car-detail-content">${activeTab==='overview'?`<div class="detail-kpi-grid"><div><span>کل آورده</span><b>${money(t.capital)}</b></div><div><span>کل هزینه</span><b>${money(t.payments)}</b></div><div><span>کل دریافتی</span><b>${money(t.income)}</b></div><div><span>سود ${c.status==='sold'?'محقق‌شده':'بالقوه'}</span><b class="${profit>=0?'positive':'negative'}">${money(profit)}</b></div><div><span>سود من</span><b>${money(u.profit)}</b></div><div><span>درصد سود من</span><b>${pct(u.mineCap?u.profit/u.mineCap*100:0)}</b></div></div><div class="info-table">${infoRow('نام خودرو',c.name)}${infoRow('مالک / ثبت‌نام‌کننده',c.ownerName)}${infoRow('کد ملی',c.nationalId,true)}${infoRow('شماره درخواست',c.requestNo,true)}${infoRow('شماره پذیرش',c.admissionNo,true)}${infoRow('نوع فروش',c.saleType)}${infoRow('تاریخ ثبت‌نام',jText(c.registerDate))}${infoRow('موعد تحویل',jText(c.deliveryDate))}${infoRow('مدت تأخیر',fmt(c.delayDays||0)+' روز')}${infoRow('جریمه تأخیر',money(c.delayProfit||0))}</div>`:activeTab==='ledger'?ledgerHtml(c):activeTab==='tx'?transactionsHtml(c):partnersHtml(c,shares)}</div>`}
-  function infoRow(k,v,copy=false){return `<div class="info-row"><span>${k}</span><b ${copy&&v?`class="copyable-detail-value" data-copy-value="${esc(v)}" title="برای کپی لمس کنید"`:''}>${esc(v||'—')}</b>${copy&&v?`<button type="button" class="copy-inline" data-copy="${esc(v)}">کپی</button>`:''}</div>`}
+  function detailHtml(c,activeTab='overview'){const t=totals(c),u=userShare(c),shares=shareRows(c),pot=profitPotential(c),profit=c.status==='sold'?u.profit:pot*u.share;return `<div class="car-detail-tabs"><button class="${activeTab==='overview'?'active':''}" data-tab="overview">خلاصه</button><button class="${activeTab==='ledger'?'active':''}" data-tab="ledger">دفتر حساب</button><button class="${activeTab==='tx'?'active':''}" data-tab="tx">تراکنش‌ها</button><button class="${activeTab==='partners'?'active':''}" data-tab="partners">شرکا</button></div><div class="car-detail-content">${activeTab==='overview'?`<div class="detail-kpi-grid"><div><span>کل آورده</span><b>${money(t.capital)}</b></div><div><span>کل هزینه</span><b>${money(t.payments)}</b></div><div><span>کل دریافتی</span><b>${money(t.income)}</b></div><div><span>سود ${c.status==='sold'?'محقق‌شده':'بالقوه'}</span><b class="${profit>=0?'positive':'negative'}">${money(profit)}</b></div><div><span>سود من</span><b>${money(u.profit)}</b></div><div><span>درصد سود من</span><b>${pct(t.capital?u.profit/t.capital*100:0)}</b></div></div><div class="info-table">${infoRow('نام خودرو',c.name)}${infoRow('مالک / ثبت‌نام‌کننده',c.ownerName)}${infoRow('کد ملی',c.nationalId,true)}${infoRow('شماره درخواست',c.requestNo,true)}${infoRow('شماره پذیرش',c.admissionNo,true)}${infoRow('نوع فروش',c.saleType)}${infoRow('تاریخ ثبت‌نام',jText(c.registerDate))}${infoRow('موعد تحویل',jText(c.deliveryDate))}${infoRow('مدت تأخیر',fmt(c.delayDays||0)+' روز')}${infoRow('جریمه تأخیر',money(c.delayProfit||0))}</div>`:activeTab==='ledger'?ledgerHtml(c):activeTab==='tx'?transactionsHtml(c):partnersHtml(c,shares)}</div>`}
+  function infoRow(k,v,copy=false){return `<div class="info-row"><span>${k}</span><b>${esc(v||'—')}</b>${copy&&v?`<button class="copy-inline" data-copy="${esc(v)}">کپی</button>`:''}</div>`}
   function ledgerHtml(c){const t=totals(c),tx=[...(c.transactions||[])].sort((a,b)=>a.date.localeCompare(b.date));let balance=0;const rows=tx.map(x=>{const sign=isCapitalTx(x)?0:(x.kind==='payment'?-x.amount:x.kind==='income'?x.amount:0);if(sign)balance+=sign;const nature=isCapitalTx(x)?'آورده سرمایه':x.kind==='payment'?'هزینه':'دریافت';return `<div class="ledger-row"><div><b>${esc(x.category)}</b><small>${jText(x.date)} · ${esc(x.party||'—')} · ${nature}</small></div><strong class="${sign<0?'negative':'positive'}">${sign===0?'—':(sign<0?'−':'+')+money(Math.abs(sign))}</strong><span>${money(balance)}</span></div>`}).join('');return `<div class="ledger-head"><span>شرح</span><span>اثر بر سود</span><span>مانده</span></div><div class="ledger-list">${rows||'<div class="detail-empty">هنوز تراکنشی ثبت نشده است.</div>'}</div><div class="ledger-total"><span>کل آورده</span><b>${money(t.capital)}</b><span>کل هزینه قابل کسر</span><b>${money(t.costs)}</b><span>کل دریافتی</span><b>${money(t.income)}</b><span>سود خالص معامله</span><b class="${t.profit>=0?'positive':'negative'}">${money(t.profit)}</b></div>`}
   function transactionsHtml(c){const cats=[...new Set((c.transactions||[]).map(x=>x.category).filter(Boolean))];const rows=[...(c.transactions||[])].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="tx-row" data-tx-search="${esc(`${x.category||''} ${x.party||''} ${x.description||''}`.toLowerCase())}" data-tx-kind="${isCapitalTx(x)?'capital':x.kind}"><div class="tx-icon ${x.kind}">${x.kind==='payment'?'−':x.kind==='income'?'+':'↔'}</div><div class="tx-main"><b class="tx-person-name">${esc(x.party||'بدون شخص')}</b><span class="tx-category-label">${esc(x.category||'بدون دسته')}</span><small>${jText(x.date)}</small><p>${esc(x.description||'')}</p></div><strong>${money(x.amount)}</strong><div class="tx-row-actions">${x.receiptData?`<button data-receipt="${x.id}">رسید</button>`:''}<button data-edit-tx="${x.id}">ویرایش</button><button data-delete-tx="${x.id}">حذف</button></div></div>`).join('');return `<div class="detail-toolbar"><span>دفتر تراکنش و رسیدها</span><button class="primary-action add-tx-btn">＋ افزودن تراکنش</button></div><div class="tx-tools"><div class="tx-search-wrap"><span class="tx-search-icon">⌕</span><input class="tx-search" type="search" placeholder="جستجوی شخص، دسته یا توضیحات..." autocomplete="off"><button type="button" class="tx-search-clear" aria-label="پاک کردن جستجو">×</button></div><div class="tx-filter-row"><label><span>نوع</span><select class="tx-kind-filter"><option value="all">همه تراکنش‌ها</option><option value="capital">خرید / آورده سرمایه</option><option value="payment">هزینه / پرداخت</option><option value="income">دریافت / درآمد</option></select></label><label><span>دسته</span><select class="tx-category-filter"><option value="all">همه دسته‌ها</option>${cats.map(cat=>`<option value="${esc(cat)}">${esc(cat)}</option>`).join('')}</select></label></div><div class="tx-filter-summary"><span class="tx-result-count">${fmt((c.transactions||[]).length)} تراکنش</span><button type="button" class="tx-clear-filters">حذف فیلترها</button></div></div><div class="tx-list">${rows||'<div class="detail-empty">تراکنشی ثبت نشده است.</div>'}</div>`}
   function partnersHtml(c,shares){const t=totals(c);return `<div class="partners-summary">${shares.map(p=>{const costs=(c.transactions||[]).filter(x=>x.kind==='payment'&&!isCapitalTx(x)&&(x.partnerId===p.id||(!x.partnerId&&x.party===p.name))).sort((a,b)=>a.date.localeCompare(b.date));return `<div class="partner-card"><div class="partner-head"><div><b>${esc(p.name)}</b><small>سهم از آورده: ${pct(p.share)}</small></div><div class="partner-profit"><span>سود سهم شریک</span><strong>${money(p.profit)}</strong></div></div><div class="partner-metrics"><div><span>آورده سرمایه</span><b>${money(p.investment)}</b></div><div><span>هزینه پرداخت‌شده</span><b>${money(p.costCredit)}</b></div><div><span>بازپرداخت هزینه</span><b>${money(p.costCredit)}</b></div><div><span>بازگشت آورده</span><b>${money(p.investment)}</b></div></div><b class="settlement-total">جمع دریافتی نهایی: ${money(p.settlement)}</b><div class="partner-cost-list">${costs.length?costs.map(x=>`<div><span>${jText(x.date)} · ${esc(x.category)}</span><b>${money(x.amount)}</b></div>`).join(''):'<small>هزینه‌ای به نام این شریک ثبت نشده است.</small>'}</div></div>`}).join('')||'<div class="detail-empty">شریکی ثبت نشده است.</div>'}<div class="partners-total"><span>هزینه‌های قابل بازپرداخت به اشخاص</span><b>${money(Object.values(t.partnerCosts).reduce((a,b)=>a+b,0))}</b></div></div>`}
   function openDetails(id,tab='overview'){const c=getCar(id);if(!c)return;syncDelay(c);$('carDetailTitle').textContent=c.name;$('carDetailBody').innerHTML=detailHtml(c,tab);openModal($('carDetailModal'));bindDetail(c)}
-  function bindDetail(c){$('carDetailBody').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{openDetails(c.id,b.dataset.tab)});const copyValue=text=>{const value=String(text??'');if(!value)return;const done=()=>toast('کپی شد');const fallback=()=>{const t=document.createElement('textarea');t.value=value;t.style.position='fixed';t.style.left='-9999px';t.style.opacity='0';document.body.appendChild(t);t.focus();t.select();try{document.execCommand('copy');done()}catch{}t.remove()};if(navigator.clipboard?.writeText)navigator.clipboard.writeText(value).then(done).catch(fallback);else fallback()};$('carDetailBody').querySelectorAll('.copy-inline').forEach(b=>b.onclick=e=>{e.stopPropagation();copyValue(b.dataset.copy)});$('carDetailBody').querySelectorAll('[data-copy-value]').forEach(b=>b.onclick=e=>{e.stopPropagation();copyValue(b.dataset.copyValue)});$('carDetailBody').querySelector('.add-tx-btn')?.addEventListener('click',()=>showTxEditor(c));$('carDetailBody').querySelectorAll('[data-receipt]').forEach(b=>b.onclick=()=>showReceipt(c,(c.transactions||[]).find(t=>t.id===b.dataset.receipt)));$('carDetailBody').querySelectorAll('[data-edit-tx]').forEach(b=>b.onclick=()=>showTxEditor(c,(c.transactions||[]).find(t=>t.id===b.dataset.editTx)));$('carDetailBody').querySelectorAll('[data-delete-tx]').forEach(b=>b.onclick=()=>{const t=(c.transactions||[]).find(t=>t.id===b.dataset.deleteTx);if(t&&confirm('این تراکنش حذف شود؟')){c.transactions=c.transactions.filter(x=>x.id!==t.id);save();syncCarEvents(c);openDetails(c.id,'tx');render()}});const body=$('carDetailBody'),search=body.querySelector('.tx-search'),kind=body.querySelector('.tx-kind-filter'),cat=body.querySelector('.tx-category-filter'),clear=body.querySelector('.tx-clear-filters'),clearSearch=body.querySelector('.tx-search-clear');const apply=()=>{const q=(search?.value||'').trim().toLowerCase(),k=kind?.value||'all',ct=cat?.value||'all';let n=0;body.querySelectorAll('.tx-row').forEach(row=>{const text=row.dataset.txSearch||'',matchQ=!q||text.includes(q),matchK=k==='all'||row.dataset.txKind===k,matchC=ct==='all'||row.querySelector('.tx-category-label')?.textContent===ct;const show=matchQ&&matchK&&matchC;row.hidden=!show;if(show)n++});const count=body.querySelector('.tx-result-count');if(count)count.textContent=`${fmt(n)} تراکنش`;};search?.addEventListener('input',apply);kind?.addEventListener('change',apply);cat?.addEventListener('change',apply);clearSearch?.addEventListener('click',()=>{if(search){search.value='';apply();search.focus()}});clear?.addEventListener('click',()=>{if(search)search.value='';if(kind)kind.value='all';if(cat)cat.value='all';apply()})}
+  function bindDetail(c){$('carDetailBody').querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{openDetails(c.id,b.dataset.tab)});$('carDetailBody').querySelectorAll('.copy-inline').forEach(b=>b.onclick=()=>navigator.clipboard?.writeText(b.dataset.copy));$('carDetailBody').querySelector('.add-tx-btn')?.addEventListener('click',()=>showTxEditor(c));$('carDetailBody').querySelectorAll('[data-receipt]').forEach(b=>b.onclick=()=>showReceipt(c,(c.transactions||[]).find(t=>t.id===b.dataset.receipt)));$('carDetailBody').querySelectorAll('[data-edit-tx]').forEach(b=>b.onclick=()=>showTxEditor(c,(c.transactions||[]).find(t=>t.id===b.dataset.editTx)));$('carDetailBody').querySelectorAll('[data-delete-tx]').forEach(b=>b.onclick=()=>{const t=(c.transactions||[]).find(t=>t.id===b.dataset.deleteTx);if(t&&confirm('این تراکنش حذف شود؟')){c.transactions=c.transactions.filter(x=>x.id!==t.id);save();syncCarEvents(c);openDetails(c.id,'tx');render()}});const body=$('carDetailBody'),search=body.querySelector('.tx-search'),kind=body.querySelector('.tx-kind-filter'),cat=body.querySelector('.tx-category-filter'),clear=body.querySelector('.tx-clear-filters'),clearSearch=body.querySelector('.tx-search-clear');const apply=()=>{const q=(search?.value||'').trim().toLowerCase(),k=kind?.value||'all',ct=cat?.value||'all';let n=0;body.querySelectorAll('.tx-row').forEach(row=>{const text=row.dataset.txSearch||'',matchQ=!q||text.includes(q),matchK=k==='all'||row.dataset.txKind===k,matchC=ct==='all'||row.querySelector('.tx-category-label')?.textContent===ct;const show=matchQ&&matchK&&matchC;row.hidden=!show;if(show)n++});const count=body.querySelector('.tx-result-count');if(count)count.textContent=`${fmt(n)} تراکنش`;};search?.addEventListener('input',apply);kind?.addEventListener('change',apply);cat?.addEventListener('change',apply);clearSearch?.addEventListener('click',()=>{if(search){search.value='';apply();search.focus()}});clear?.addEventListener('click',()=>{if(search)search.value='';if(kind)kind.value='all';if(cat)cat.value='all';apply()})}
   function showTxEditor(c,edit){const host=$('carDetailBody');host.innerHTML=`<div class="back-to-detail"><button id="txBack">‹ بازگشت به دفتر تراکنش</button></div>${transactionForm(c,edit)}`;const form=host.querySelector('.transaction-form');form.querySelectorAll('.amount-input').forEach(el=>el.addEventListener('input',()=>formatAmount(el)));form.querySelector('.tx-cancel').onclick=()=>openDetails(c.id,'tx');form.querySelector('.tx-save').onclick=()=>saveTx(c,form,edit);const dateBtn=form.querySelector('.tx-date-btn');dateBtn.onclick=()=>openCarDatePicker(dateBtn,form.querySelector('.tx-date'));form.querySelector('.tx-receipt-preview-btn')?.addEventListener('click',()=>{});form.querySelector('.tx-receipt').onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{form.dataset.receiptData=r.result;form.querySelector('.receipt-label small').textContent=f.name};r.readAsDataURL(f)};host.querySelector('#txBack').onclick=()=>openDetails(c.id,'tx')}
   function saveTx(c,form,old){const receipt=old?.receiptData||form.dataset.receiptData||'',fileName=old?.receiptName||form.querySelector('.tx-receipt')?.files?.[0]?.name||'',t=old||{id:uid()};const category=form.querySelector('.tx-category').value;const selected=form.querySelector('.tx-party-select');const partnerId=selected.value&&selected.value!=='__other'?selected.value:'';const party=partnerId?(c.partners||[]).find(p=>p.id===partnerId)?.name||'':(selected.selectedOptions[0]?.textContent||'').trim();const kind=CAPITAL_CATEGORIES.has(category)?'capital':form.querySelector('.tx-kind').value;if(CAPITAL_CATEGORIES.has(category)&&!partnerId){alert('برای خرید حواله یا تکمیل وجه، شریک پرداخت‌کننده را انتخاب کن.');return}Object.assign(t,{kind,category,amount:toNum(form.querySelector('.tx-amount').value),date:form.querySelector('.tx-date').value,partnerId,party,description:form.querySelector('.tx-desc').value.trim(),receiptData:receipt,receiptName:fileName});if(!t.amount){alert('مبلغ را وارد کن.');return}if(!c.transactions)c.transactions=[];if(!old)c.transactions.push(t);save();syncCarEvents(c);openDetails(c.id,'tx');render()}
   function showReceipt(c,t){if(!t?.receiptData)return;$('receiptTitle').textContent=t.category;$('receiptBody').innerHTML=`<div class="receipt-meta"><span>${jText(t.date)}</span><b>${money(t.amount)}</b></div><img class="receipt-image" src="${t.receiptData}" alt="رسید ${esc(t.category)}">`;openModal($('carReceiptModal'))}
@@ -779,9 +846,10 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     picker.style.width=w+'px';picker.style.left=left+'px';picker.style.top=top+'px';
     picker.style.right='auto';
   }
+  $('weightedDeliveryPicker').onclick=()=>openCarDatePicker($('weightedDeliveryPicker'),$('weightedDeliveryDate'));
   function renderCarDatePicker(){title.textContent=`${months[pickerM-1]} ${pickerY}`;grid.innerHTML='';const [gy,gm,gd]=j2g(pickerY,pickerM,1),first=(new Date(gy,gm-1,gd).getDay()+1)%7;for(let i=0;i<first;i++)grid.appendChild(document.createElement('span'));let len=pickerM<7?31:pickerM<12?30:((()=>{const g=j2g(pickerY,pickerM,30),b=g2j(...g);return b[2]===30?30:29})());for(let d=1;d<=len;d++){const b=document.createElement('button');b.type='button';b.textContent=pad(d);if(targetInput?.value===`${pickerY}-${pad(pickerM)}-${pad(d)}`)b.classList.add('selected');b.onclick=()=>{targetInput.value=`${pickerY}-${pad(pickerM)}-${pad(d)}`;picker.hidden=true;targetInput.dispatchEvent(new Event('input',{bubbles:true}))};grid.appendChild(b)}}
-  $('carDatePrev').onclick=e=>{e.stopPropagation();pickerM--;if(pickerM<1){pickerM=12;pickerY--}renderCarDatePicker()};$('carDateNext').onclick=e=>{e.stopPropagation();pickerM++;if(pickerM>12){pickerM=1;pickerY++}renderCarDatePicker()};picker.addEventListener('click',e=>e.stopPropagation());
-  document.addEventListener('click',e=>{const btn=e.target.closest('[data-date-target]');if(btn&&root.contains(btn)){e.preventDefault();e.stopPropagation();openCarDatePicker(btn,$(btn.dataset.dateTarget));return}if(e.target.closest('.car-date-pop'))return;if(!e.target.closest('.tx-date-btn,.weighted-date-btn'))picker.hidden=true});
+  $('carDatePrev').onclick=e=>{e.stopPropagation();pickerM--;if(pickerM<1){pickerM=12;pickerY--}renderCarDatePicker()};$('carDateNext').onclick=e=>{e.stopPropagation();pickerM++;if(pickerM>12){pickerM=1;pickerY++}renderCarDatePicker()};picker.addEventListener('click',e=>e.stopPropagation());document.addEventListener('click',e=>{if(!picker.contains(e.target)&&!e.target.closest('[data-date-target]')&&!e.target.closest('.tx-date-btn'))picker.hidden=true});
+  root.querySelectorAll('[data-date-target]').forEach(btn=>btn.addEventListener('click',e=>{e.stopPropagation();openCarDatePicker(btn,$(btn.dataset.dateTarget))}));
 
   // Global amount formatting for vehicle forms; no maxlength is ever applied.
   root.addEventListener('input',e=>{if(e.target.classList.contains('amount-input'))formatAmount(e.target)});
@@ -794,7 +862,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
 /* ================= Finance Dashboard / Portfolio ================= */
 (()=>{
   const $=id=>document.getElementById(id); if(!$('fmAssetsList')) return;
-  const APP_VERSION='2.8.1';
+  const APP_VERSION='2.6.0';
   const STORE='finance-portfolio-v1',CAT='finance-asset-categories-v1',SET='finance-dashboard-settings-v1',SNAP='finance-portfolio-snapshots-v1',MARKET='finance-market-v1',TX='finance-portfolio-transactions-v1',ASSET_DEF='finance-asset-definitions-v1';
   const marketDefs=[{"name":"دلار","key":"USD","keyword":"USD","category":"ارزها","enabled":true},{"name":"طلای 18 عیار","key":"GOLD18","keyword":"IR_GOLD_18K","category":"طلا و سکه","enabled":true},{"name":"طلای 24 عیار","key":"GOLD24","keyword":"IR_GOLD_24K","category":"طلا و سکه","enabled":true},{"name":"سکه امامی","key":"EMAMI","keyword":"IR_COIN_EMAMI","category":"طلا و سکه","enabled":true},{"name":"سکه بهار آزادی","key":"BAHAR","keyword":"IR_COIN_BAHAR","category":"طلا و سکه","enabled":true},{"name":"نیم سکه","key":"HALF","keyword":"IR_COIN_HALF","category":"طلا و سکه","enabled":true},{"name":"ربع سکه","key":"QUARTER","keyword":"IR_COIN_QUARTER","category":"طلا و سکه","enabled":true},{"name":"انس طلا","key":"XAU","keyword":"XAUUSD","category":"فلزات گران‌بها","enabled":true},{"name":"انس نقره","key":"XAG","keyword":"XAGUSD","category":"فلزات گران‌بها","enabled":true},{"name":"مس","key":"COPPER","keyword":"Cu","category":"فلزات پایه","enabled":true},{"name":"نفت برنت","key":"BRENT","keyword":"BRENT","category":"انرژی","enabled":true},{"name":"تتر","key":"USDT","keyword":"USDT","category":"رمزارزها","enabled":true},{"name":"بیت‌کوین","key":"BTC","keyword":"BTC","category":"رمزارزها","enabled":true},{"name":"اتریوم","key":"ETH","keyword":"ETH","category":"رمزارزها","enabled":true},{"name":"سولانا","key":"SOL","keyword":"SOL","category":"رمزارزها","enabled":true},{"name":"انس پلاتین","key":"XPTUSD","keyword":"XPTUSD","category":"فلزات گران‌بها","enabled":true},{"name":"انس پالادیوم","key":"XPDUSD","keyword":"XPDUSD","category":"فلزات گران‌بها","enabled":true},{"name":"آلومینیوم","key":"Al","keyword":"Al","category":"فلزات پایه","enabled":true},{"name":"روی","key":"Zn","keyword":"Zn","category":"فلزات پایه","enabled":true},{"name":"سرب","key":"Pb","keyword":"Pb","category":"فلزات پایه","enabled":true},{"name":"قلع","key":"Sn","keyword":"Sn","category":"فلزات پایه","enabled":true},{"name":"نیکل","key":"Ni","keyword":"Ni","category":"فلزات پایه","enabled":true},{"name":"نفت سبک","key":"WTI","keyword":"WTI","category":"انرژی","enabled":true},{"name":"گاز طبیعی","key":"GAS","keyword":"GAS","category":"انرژی","enabled":true},{"name":"بنزین","key":"RBOB","keyword":"RBOB","category":"انرژی","enabled":true},{"name":"گازوییل","key":"GASOIL","keyword":"GASOIL","category":"انرژی","enabled":true},{"name":"طلای آب‌شده نقدی","key":"IR_GOLD_MELTED","keyword":"IR_GOLD_MELTED","category":"طلا و سکه","enabled":true},{"name":"سکه یک گرمی","key":"IR_COIN_1G","keyword":"IR_COIN_1G","category":"طلا و سکه","enabled":true},{"name":"دلار تتر","key":"USDT_IRT","keyword":"USDT_IRT","category":"ارزها","enabled":true},{"name":"یورو","key":"EUR","keyword":"EUR","category":"ارزها","enabled":true},{"name":"درهم امارات","key":"AED","keyword":"AED","category":"ارزها","enabled":true},{"name":"پوند","key":"GBP","keyword":"GBP","category":"ارزها","enabled":true},{"name":"یکصد ین ژاپن","key":"JPY","keyword":"JPY","category":"ارزها","enabled":true},{"name":"دینار کویت","key":"KWD","keyword":"KWD","category":"ارزها","enabled":true},{"name":"دلار استرالیا","key":"AUD","keyword":"AUD","category":"ارزها","enabled":true},{"name":"دلار کانادا","key":"CAD","keyword":"CAD","category":"ارزها","enabled":true},{"name":"یوآن چین","key":"CNY","keyword":"CNY","category":"ارزها","enabled":true},{"name":"لیر ترکیه","key":"TRY","keyword":"TRY","category":"ارزها","enabled":true},{"name":"ریال عربستان","key":"SAR","keyword":"SAR","category":"ارزها","enabled":true},{"name":"فرانک سوئیس","key":"CHF","keyword":"CHF","category":"ارزها","enabled":true},{"name":"روپیه هند","key":"INR","keyword":"INR","category":"ارزها","enabled":true},{"name":"روپیه پاکستان","key":"PKR","keyword":"PKR","category":"ارزها","enabled":true},{"name":"دینار عراق","key":"IQD","keyword":"IQD","category":"ارزها","enabled":true},{"name":"لیر سوریه","key":"SYP","keyword":"SYP","category":"ارزها","enabled":true},{"name":"کرون سوئد","key":"SEK","keyword":"SEK","category":"ارزها","enabled":true},{"name":"ریال قطر","key":"QAR","keyword":"QAR","category":"ارزها","enabled":true},{"name":"ریال عمان","key":"OMR","keyword":"OMR","category":"ارزها","enabled":true},{"name":"دینار بحرین","key":"BHD","keyword":"BHD","category":"ارزها","enabled":true},{"name":"افغانی","key":"AFN","keyword":"AFN","category":"ارزها","enabled":true},{"name":"رینگیت مالزی","key":"MYR","keyword":"MYR","category":"ارزها","enabled":true},{"name":"بات تایلند","key":"THB","keyword":"THB","category":"ارزها","enabled":true},{"name":"روبل روسیه","key":"RUB","keyword":"RUB","category":"ارزها","enabled":true},{"name":"منات آذربایجان","key":"AZN","keyword":"AZN","category":"ارزها","enabled":true},{"name":"درام ارمنستان","key":"AMD","keyword":"AMD","category":"ارزها","enabled":true},{"name":"لاری گرجستان","key":"GEL","keyword":"GEL","category":"ارزها","enabled":true},{"name":"ایکس‌آر‌پی","key":"XRP","keyword":"XRP","category":"رمزارزها","enabled":true},{"name":"بی‌ان‌بی","key":"BNB","keyword":"BNB","category":"رمزارزها","enabled":true},{"name":"یواس‌دی کوین","key":"USDC","keyword":"USDC","category":"رمزارزها","enabled":true},{"name":"دوج‌کوین","key":"DOGE","keyword":"DOGE","category":"رمزارزها","enabled":true},{"name":"کاردانو","key":"ADA","keyword":"ADA","category":"رمزارزها","enabled":true},{"name":"ترون","key":"TRX","keyword":"TRX","category":"رمزارزها","enabled":true},{"name":"چین‌لینک","key":"LINK","keyword":"LINK","category":"رمزارزها","enabled":true},{"name":"آوالانچ","key":"AVAX","keyword":"AVAX","category":"رمزارزها","enabled":true},{"name":"استلار","key":"XLM","keyword":"XLM","category":"رمزارزها","enabled":true},{"name":"شیبا اینو","key":"SHIB","keyword":"SHIB","category":"رمزارزها","enabled":true},{"name":"پولکادات","key":"DOT","keyword":"DOT","category":"رمزارزها","enabled":true},{"name":"لایت‌کوین","key":"LTC","keyword":"LTC","category":"رمزارزها","enabled":true},{"name":"یونی‌سواپ","key":"UNI","keyword":"UNI","category":"رمزارزها","enabled":true},{"name":"فایل‌کوین","key":"FIL","keyword":"FIL","category":"رمزارزها","enabled":true},{"name":"کازماس","key":"ATOM","keyword":"ATOM","category":"رمزارزها","enabled":true}];
   const defaultCats=[{id:'gold',name:'طلا',icon:'🪙',color:'#c59b35'},{id:'crypto',name:'ارز دیجیتال',icon:'₿',color:'#8b78e6'},{id:'currency',name:'ارز',icon:'💵',color:'#2b9d78'},{id:'coin',name:'سکه',icon:'🟡',color:'#d37b3b'},{id:'stock',name:'بورس',icon:'📈',color:'#3d8ed8'},{id:'cash',name:'نقدینگی',icon:'💳',color:'#5c879f'}];
@@ -1150,8 +1218,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   async function fetchBrsApiData(){
     const key=(settings.apiKey||'').trim();
     if(!key)throw new Error('BRSAPI token missing');
-    const base=(settings.apiUrl||'https://Api.BrsApi.ir').replace(/\/$/,'');
-    const url=/Gold_Currency\.php/i.test(base)?`${base}${base.includes('?')?'&':'?'}key=${encodeURIComponent(key)}`:`${base}/Market/Gold_Currency.php?key=${encodeURIComponent(key)}`;
+    const url=`https://Api.BrsApi.ir/Market/Gold_Currency.php?key=${encodeURIComponent(key)}`;
     const res=await fetch(url,{headers:{Accept:'application/json'},cache:'no-store'});
     if(!res.ok)throw new Error(`BRSAPI ${res.status}`);
     const data=await res.json();
@@ -1185,14 +1252,14 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function bindSwipes(){
     document.querySelectorAll('.fm-asset-shell:not(.fm-vehicle-asset)').forEach(el=>{
       if(el.classList.contains('fm-vehicle-asset')){el.style.removeProperty('--swipe-x');el.classList.remove('swiped-left','swiped-right');return}
-      let sx=0,dx=0,drag=false,moved=false;
+      let sx=0,dx=0,drag=false;
       const state=()=>el.classList.contains('swiped-left')?'left':el.classList.contains('swiped-right')?'right':'closed';
       const close=()=>{el.classList.remove('swiped-left','swiped-right');el.style.setProperty('--swipe-x','0px')};
-      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;if(e.target.closest('button'))return;sx=e.clientX;dx=0;moved=false;drag=true;el.setPointerCapture?.(e.pointerId)};
-      el.onpointermove=e=>{if(!drag)return;dx=e.clientX-sx;if(Math.abs(dx)>8)moved=true;if(Math.abs(dx)>6)e.preventDefault();const st=state();let base=st==='left'?-142:st==='right'?142:0;let x=base+dx;if(st==='left'&&dx>0)x=Math.min(0,base+dx);if(st==='right'&&dx<0)x=Math.max(0,base+dx);x=Math.max(-142,Math.min(142,x));el.style.setProperty('--swipe-x',x+'px')};
-      el.onpointerup=()=>{if(!drag)return;drag=false;const st=state(),x=dx;if(st==='left'){if(x>25)close();else el.style.setProperty('--swipe-x','-142px');return}if(st==='right'){if(x<-25)close();else el.style.setProperty('--swipe-x','142px');return}if(Math.abs(x)>55){el.classList.toggle('swiped-left',x<0);el.classList.toggle('swiped-right',x>0);el.style.setProperty('--swipe-x',x<0?'-142px':'142px')}else el.style.setProperty('--swipe-x','0px')};
-      el.onpointercancel=()=>{drag=false;el.style.setProperty('--swipe-x','0px')};
-      el.onclick=e=>{if(moved)return;if(e.target.closest('.fm-swipe-actions')||e.target.closest('[data-details]'))return;if(state()!=='closed')close()};
+      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;if(e.target.closest('button'))return;sx=e.clientX;dx=0;drag=true;try{el.setPointerCapture?.(e.pointerId)}catch{}};
+      el.onpointermove=e=>{if(!drag)return;dx=e.clientX-sx;if(Math.abs(dx)>6)e.preventDefault();const st=state();let base=st==='left'?-142:st==='right'?142:0;let x=base+dx;if(st==='left'&&dx>0)x=Math.min(0,base+dx);if(st==='right'&&dx<0)x=Math.max(0,base+dx);x=Math.max(-142,Math.min(142,x));el.style.setProperty('--swipe-x',x+'px')};
+      el.onpointerup=e=>{if(!drag)return;drag=false;try{if(el.hasPointerCapture?.(e.pointerId))el.releasePointerCapture(e.pointerId)}catch{}const st=state(),x=dx;if(st==='left'){if(x>25)close();else el.style.setProperty('--swipe-x','-142px');return}if(st==='right'){if(x<-25)close();else el.style.setProperty('--swipe-x','142px');return}if(Math.abs(x)>55){el.classList.toggle('swiped-left',x<0);el.classList.toggle('swiped-right',x>0);el.style.setProperty('--swipe-x',x<0?'-142px':'142px')}else el.style.setProperty('--swipe-x','0px')};
+      el.onpointercancel=e=>{drag=false;try{if(el.hasPointerCapture?.(e.pointerId))el.releasePointerCapture(e.pointerId)}catch{}el.style.setProperty('--swipe-x','0px')};
+      el.onclick=e=>{if(e.target.closest('.fm-swipe-actions')||e.target.closest('[data-details]'))return;if(state()!=='closed')close()};
     })
   }
   $('fmManageCategories').onclick=()=>categoryModal();$('fmAddAsset').onclick=()=>assetModal();$('fmTransactions').onclick=portfolioTransactions;$('fmRefreshPrices').onclick=refreshPrices;$('fmSaveSettings').onclick=saveSettings;$('fmMarketSettings').onclick=marketSettings;$('fmBackupExport').onclick=()=>{const data={version:3,exportedAt:new Date().toISOString(),assets,categories,assetDefinitions,settings,snapshots,market,transactions};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`finance-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)};$('fmBackupImport').onclick=()=>$('fmBackupFile').click();$('fmBackupFile').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d.assets))assets=d.assets;if(Array.isArray(d.categories))categories=d.categories;if(Array.isArray(d.assetDefinitions))assetDefinitions=d.assetDefinitions;if(d.settings)settings={...settings,...d.settings};if(Array.isArray(d.snapshots))snapshots=d.snapshots;if(d.market)market=d.market;if(Array.isArray(d.transactions))transactions=d.transactions;write(STORE,assets);write(CAT,categories);write(ASSET_DEF,assetDefinitions);write(SET,settings);write(SNAP,snapshots);write(MARKET,market);write(TX,transactions);render();armTimer();toast('بکاپ با موفقیت وارد شد')}catch{toast('فایل بکاپ معتبر نیست')}};r.readAsText(f);e.target.value='' };
@@ -1200,8 +1267,5 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   document.querySelectorAll('[data-sort-assets]').forEach(b=>b.onclick=()=>{assetSort=b.dataset.sortAssets;saveUi();document.querySelectorAll('[data-sort-assets]').forEach(x=>x.classList.toggle('active',x===b));$('fmSortPanel').hidden=true;renderAssets()});
   $('fmDashboardToolsToggle').onclick=()=>{settings.ui={...(settings.ui||{}),searchToolsCollapsed:!settings.ui?.searchToolsCollapsed};write(SET,settings);applyDashboardUi()};$('fmChartToggle').onclick=()=>{settings.ui={...(settings.ui||{}),chartCollapsed:!settings.ui?.chartCollapsed};write(SET,settings);applyDashboardUi();if(!settings.ui.chartCollapsed)requestAnimationFrame(renderChart)};$('fmNumberTabs').querySelectorAll('[data-number-mode]').forEach(b=>b.onclick=()=>{numberMode=b.dataset.numberMode;saveUi();syncDashboardSelections();render()});$('fmViewTabs').querySelectorAll('[data-assets-view]').forEach(b=>b.onclick=()=>{assetsView=b.dataset.assetsView;saveUi();syncDashboardSelections();renderAssets()});$('fmPnlTabs').querySelectorAll('[data-pnl-period]').forEach(b=>b.onclick=()=>{pnlPeriod=b.dataset.pnlPeriod;saveUi();syncDashboardSelections();renderSummary()});$('fmChartTabs').querySelectorAll('[data-chart-unit]').forEach(b=>b.onclick=()=>{chartUnit=b.dataset.chartUnit;saveUi();syncDashboardSelections();renderChart()});
   $('fmAssetsList').addEventListener('click',e=>{const shell=e.target.closest('.fm-asset-shell');if(!shell)return;const id=shell.dataset.assetId;if(shell.dataset.vehicleId){const carNav=document.querySelector('.nav-item[data-target="car"]');carNav?.click();return}if(e.target.closest('[data-buy]'))tradeModal(id,'buy');else if(e.target.closest('[data-sell]'))tradeModal(id,'sell');else if(e.target.closest('[data-ledger]'))ledgerModal(id);else if(e.target.closest('[data-details]'))assetDetailsModal(id);else if(e.target.closest('[data-fm-edit]'))assetModal(id);else if(e.target.closest('[data-fm-delete]')){const a=assets.find(x=>String(x.id)===String(id));if(a&&confirm(`دارایی «${a.name}» حذف شود؟`)){assets=assets.filter(x=>x!==a);transactions=transactions.filter(t=>String(t.assetId)!==String(id));write(STORE,assets);write(TX,transactions);snapshot();render();toast('دارایی حذف شد')}}else if(e.target.closest('[data-note]'))noteModal(id)});
-  window.addEventListener('finance-tab-changed',e=>{if(e.detail?.name==='dashboard'){requestAnimationFrame(()=>{render();requestAnimationFrame(renderChart)})}});window.addEventListener('resize',()=>{if(document.querySelector('.dashboard-page.active'))renderChart()});window.addEventListener('storage',e=>{if([STORE,CAT,SET,SNAP,MARKET,TX,ASSET_DEF].includes(e.key)){assets=read(STORE,[]);categories=read(CAT,categories);settings=read(SET,settings);snapshots=read(SNAP,[]);market=read(MARKET,market);transactions=read(TX,[]);assetDefinitions=read(ASSET_DEF,assetDefinitions);render()}});syncPortfolioEvents();snapshot();render();armTimer();
+  window.addEventListener('resize',()=>{if(document.querySelector('.dashboard-page.active'))renderChart()});window.addEventListener('storage',e=>{if([STORE,CAT,SET,SNAP,MARKET,TX,ASSET_DEF].includes(e.key)){assets=read(STORE,[]);categories=read(CAT,categories);settings=read(SET,settings);snapshots=read(SNAP,[]);market=read(MARKET,market);transactions=read(TX,[]);assetDefinitions=read(ASSET_DEF,assetDefinitions);render()}});syncPortfolioEvents();snapshot();render();armTimer();
 })();
-
-/* Mobile navigation history: overlays first, then previous tab. */
-(()=>{const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';let internal=false;const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';history.replaceState({financeTab:currentTab()},'',location.href);document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{if(internal)return;const target=item.dataset.target;if(target&&target!==currentTab())history.pushState({financeTab:target},'',location.href)}));window.addEventListener('popstate',e=>{const modals=[...document.querySelectorAll(modalSelector)];if(modals.length){const m=modals[modals.length-1];m.classList.remove('open');m.setAttribute('aria-hidden','true');return}const target=e.state?.financeTab;if(target){const item=document.querySelector('.nav-item[data-target=+target+]');if(item){internal=true;item.click();internal=false}}});})();
