@@ -6,6 +6,34 @@
   const viewport = document.getElementById('viewport');
   const themeToggle = document.getElementById('themeToggle');
 
+  // All feature overlays live directly under app-shell, exactly like the
+  // Dashboard > مدیریت دسته‌بندی modal. This keeps one independent overlay
+  // layer above the bottom navigation and prevents touch/scroll leakage.
+  const appShell = document.querySelector('.app-shell');
+  if (appShell) {
+    document.querySelectorAll('.car-modal, .loan-modal').forEach(modal => {
+      if (modal.parentElement !== appShell) appShell.appendChild(modal);
+    });
+  }
+
+  // Normalize vehicle/loan overlays to the same scroll architecture used by
+  // Dashboard > مدیریت دسته‌بندی: the header stays fixed and exactly one
+  // dedicated body element performs native touch scrolling. This is done once
+  // at startup so old nested overflow rules cannot compete with the new one.
+  if (appShell) {
+    document.querySelectorAll('.car-modal .car-sheet, .loan-modal .loan-sheet').forEach(sheet => {
+      if (sheet.querySelector(':scope > .modal-scroll-body')) return;
+      const header = sheet.querySelector(':scope > .sheet-header');
+      if (!header) return;
+      const body = document.createElement('div');
+      body.className = 'modal-scroll-body';
+      Array.from(sheet.children).forEach(child => {
+        if (child !== header) body.appendChild(child);
+      });
+      sheet.appendChild(body);
+    });
+  }
+
   // This is the single source of truth for navigation.
   // Left -> right: Settings, Calendar, Dashboard, Car, Loan.
   const order = ['settings', 'calendar', 'dashboard', 'car', 'loan'];
@@ -516,6 +544,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   const vv = window.visualViewport;
   let focusedField = null;
   let rafId = 0;
+  let touchActive = false;
 
   const isTextField = (el) =>
     el &&
@@ -524,35 +553,51 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
 
   function keepFieldVisible() {
     if (!focusedField || !document.body.contains(focusedField)) return;
+    // Only ever correct while the field genuinely has focus (the user tapped
+    // in to type/select). Never touch scroll position outside that case —
+    // that's what made ordinary flicking/scrolling jump around.
+    if (document.activeElement !== focusedField) return;
+    // Never fight a scroll/selection gesture the user is actively performing:
+    // this is what made scrolling feel "stuck" until the finger was released.
+    if (touchActive) return;
 
     const viewportHeight = vv ? vv.height : window.innerHeight;
     const viewportTop = vv ? vv.offsetTop : 0;
     const rect = focusedField.getBoundingClientRect();
-
-    // A small comfortable gap keeps the field and the text being entered
-    // visibly above the keyboard without over-scrolling the page.
     const safeTop = viewportTop + 18;
     const safeBottom = viewportTop + viewportHeight - 18;
 
-    if (rect.bottom > safeBottom) {
-      focusedField.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'nearest'
-      });
-    } else if (rect.top < safeTop) {
-      focusedField.scrollIntoView({
-        behavior: 'smooth',
-        block: 'center',
-        inline: 'nearest'
-      });
-    }
+    // Only adjust the nearest modal/page scroll surface when the field is
+    // actually obscured. Do not use scrollIntoView(): it can choose an
+    // ancestor outside the modal and move the app page during normal scroll.
+    const modal = focusedField.closest('.loan-modal.open, .car-modal.open, .fm-modal.open');
+    const scroller = modal?.querySelector('.modal-scroll-body, .fm-modal-body') || focusedField.closest('.page');
+    if (!scroller || scroller.scrollHeight <= scroller.clientHeight) return;
+
+    const scrollerRect = scroller.getBoundingClientRect();
+    const top = Math.max(safeTop, scrollerRect.top + 12);
+    const bottom = Math.min(safeBottom, scrollerRect.bottom - 18);
+    let delta = 0;
+    if (rect.bottom > bottom) delta = rect.bottom - bottom;
+    else if (rect.top < top) delta = rect.top - top;
+    // Smooth is fine here: this only ever runs right after the keyboard
+    // opens for a field the user just tapped, never mid-scroll (guarded
+    // above), so there is nothing left for it to fight.
+    if (Math.abs(delta) > 1) scroller.scrollBy({top: delta, behavior: 'smooth'});
   }
 
   function scheduleKeepVisible() {
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(keepFieldVisible);
   }
+
+  // Track whether a finger is currently on the screen, purely so
+  // keepFieldVisible can avoid running mid-gesture. Touch end must NOT
+  // itself trigger a correction — that fired after every ordinary scroll
+  // flick too (not just after editing a field) and caused the page to jump.
+  document.addEventListener('touchstart', () => { touchActive = true; }, { passive: true });
+  document.addEventListener('touchend', () => { touchActive = false; }, { passive: true });
+  document.addEventListener('touchcancel', () => { touchActive = false; }, { passive: true });
 
   document.addEventListener('focusin', (event) => {
     if (!isTextField(event.target)) return;
@@ -572,9 +617,16 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     }
   }, { passive: true });
 
+  // visualViewport's own 'scroll' event fires as a side effect of iOS's
+  // native "scroll the focused field into view" behavior (including while
+  // selecting text in a field). Reacting to it here re-triggered our own
+  // corrective scroll on top of the native one — a feedback loop that is
+  // the main reason scrolling turned janky again right after a selection.
+  // 'resize' (keyboard opening/closing) is still handled, but only ever
+  // acts while a field has real focus (checked inside keepFieldVisible),
+  // so it stays silent during normal page scrolling.
   if (vv) {
     vv.addEventListener('resize', scheduleKeepVisible, { passive: true });
-    vv.addEventListener('scroll', scheduleKeepVisible, { passive: true });
   }
 
   window.addEventListener('resize', scheduleKeepVisible, { passive: true });
@@ -680,7 +732,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       });
       w.addEventListener('pointerup',e=>{
         if(!dragging)return;dragging=false;
-        if(dx<-32)open();else if(dx>32)close();
+        if(dx<-32){open();}else if(dx>32){close();}
       });
       w.addEventListener('pointercancel',()=>{dragging=false});
       w.addEventListener('click',e=>{
@@ -694,7 +746,20 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       });
     });
   }
-  function openModal(m){m.classList.add('open');m.setAttribute('aria-hidden','false')};function closeModal(m){m.classList.remove('open');m.setAttribute('aria-hidden','true')};
+  function openModal(m){
+    if(!m)return;
+    if(m.classList.contains('open'))return;
+    m.classList.add('open');m.setAttribute('aria-hidden','false');
+    m.dataset.historyManaged='true';
+    history.pushState({financeTab:document.querySelector('.nav-item.active')?.dataset.target||'dashboard',modalId:m.id},'',location.href);
+  }
+  function closeModal(m){
+    if(!m)return;
+    const managed=m.dataset.historyManaged==='true';
+    const isCurrent=history.state?.modalId===m.id;
+    m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
+    if(managed&&isCurrent){history.back()}
+  };
   function resetForm(c){$('carForm').reset();$('carId').value=c?.id||'';$('carFormKicker').textContent=c?'ویرایش اطلاعات':'ثبت اطلاعات';$('carFormTitle').textContent=c?'ویرایش خودرو':'خودرو جدید';$('carName').value=c?.name||'';$('carCompany').value=c?.company||'';$('carSaleType').value=c?.saleType||'فوری';$('carFactoryPrice').value=c?.factoryPrice?fmt(c.factoryPrice):'';$('carOwnerName').value=c?.ownerName||'';$('carNationalId').value=c?.nationalId||'';$('carRequestNo').value=c?.requestNo||'';$('carAdmissionNo').value=c?.admissionNo||'';$('carRegisterDate').value=c?.registerDate||jToday();$('carDeliveryDate').value=c?.deliveryDate||'';$('carDelayRate').value=c?.delayRate??'';$('carDelayDays').value=c?.delayDays?fmt(c.delayDays):'';$('carDelayProfit').value=c?.delayProfit?fmt(c.delayProfit):'';$('carDelayBase').value=c?.delayBase||'factory';$('carDelayCustom').value=c?.delayCustom?fmt(c.delayCustom):'';$('carStatus').value=c?.status||'active';$('carMarketPrice').value=c?.marketPrice?fmt(c.marketPrice):'';$('carDeliveryActual').value=c?.deliveryActual||'';$('carSaleDate').value=c?.saleDate||'';$('carNotes').value=c?.notes||'';renderPartnersEditor(c?.partners||[defaultPartner()]);toggleCustomDelay();syncFormDelay();}
   function openForm(c=null){resetForm(c);openModal($('carFormModal'));setTimeout(()=>$('carName').focus(),100)}
   function renderPartnersEditor(list){const box=$('carPartnersEditor');box.innerHTML='';(list.length?list:[defaultPartner()]).forEach((p,i)=>{const row=document.createElement('div');row.className='partner-edit-row';row.dataset.pid=p.id;row.innerHTML=`<input class="partner-name" value="${esc(p.name||'')}" placeholder="نام شریک"><label class="partner-me"><input type="checkbox" class="partner-is-me" ${p.isMe?'checked':''}> سهم من</label>${i?'<button type="button" class="remove-partner">×</button>':''}`;box.appendChild(row)});}
@@ -762,26 +827,30 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   $('carCumulativeBtn').onclick=cumulative;
   root.querySelectorAll('.car-status-tab').forEach(b=>b.addEventListener('click',()=>{activeCarTab=b.dataset.carStatusTab;render()}));
 
-  // Compact Jalali picker for every vehicle date field.
+  // One Jalali picker for all four vehicle-form dates. This is the only
+  // vehicle date-picker binding; use delegation so the buttons keep working
+  // even when the form/modal is opened or re-rendered.
   const picker=$('carDatePicker'),grid=$('carDateGrid'),title=$('carDateTitle');let pickerY=0,pickerM=0,targetInput=null;
-  // The page is an overflow/transform container, so the picker must live under body
-  // to avoid being clipped or painted behind the vehicle form modal.
   if(picker && picker.parentElement!==document.body) document.body.appendChild(picker);
   function openCarDatePicker(btn,input){
+    if(!picker||!input)return;
     targetInput=input;
     const v=/^\d{4}-\d{2}-\d{2}$/.test(input.value)?input.value:jToday(),a=v.split('-').map(Number);
     pickerY=a[0];pickerM=a[1];renderCarDatePicker();
-    picker.hidden=false;
-    const r=btn.getBoundingClientRect(),w=Math.min(300,window.innerWidth-24),h=330;
-    let left=Math.max(12,Math.min(window.innerWidth-w-12,r.left));
-    let top=r.bottom+7;
-    if(top+h>window.innerHeight-8) top=Math.max(8,r.top-h-7);
-    picker.style.width=w+'px';picker.style.left=left+'px';picker.style.top=top+'px';
-    picker.style.right='auto';
+    const r=btn.getBoundingClientRect(),w=Math.min(300,window.innerWidth-20),h=Math.min(360,window.innerHeight-20);
+    let left=Math.max(10,Math.min(window.innerWidth-w-10,r.left));
+    let top=r.bottom+6;
+    if(top+h>window.innerHeight-10) top=Math.max(10,r.top-h-6);
+    picker.style.width=w+'px';picker.style.left=left+'px';picker.style.top=top+'px';picker.style.right='auto';picker.hidden=false;
   }
-  function renderCarDatePicker(){title.textContent=`${months[pickerM-1]} ${pickerY}`;grid.innerHTML='';const [gy,gm,gd]=j2g(pickerY,pickerM,1),first=(new Date(gy,gm-1,gd).getDay()+1)%7;for(let i=0;i<first;i++)grid.appendChild(document.createElement('span'));let len=pickerM<7?31:pickerM<12?30:((()=>{const g=j2g(pickerY,pickerM,30),b=g2j(...g);return b[2]===30?30:29})());for(let d=1;d<=len;d++){const b=document.createElement('button');b.type='button';b.textContent=pad(d);if(targetInput?.value===`${pickerY}-${pad(pickerM)}-${pad(d)}`)b.classList.add('selected');b.onclick=()=>{targetInput.value=`${pickerY}-${pad(pickerM)}-${pad(d)}`;picker.hidden=true;targetInput.dispatchEvent(new Event('input',{bubbles:true}))};grid.appendChild(b)}}
-  $('carDatePrev').onclick=e=>{e.stopPropagation();pickerM--;if(pickerM<1){pickerM=12;pickerY--}renderCarDatePicker()};$('carDateNext').onclick=e=>{e.stopPropagation();pickerM++;if(pickerM>12){pickerM=1;pickerY++}renderCarDatePicker()};picker.addEventListener('click',e=>e.stopPropagation());
-  document.addEventListener('click',e=>{const btn=e.target.closest('[data-date-target]');if(btn&&root.contains(btn)){e.preventDefault();e.stopPropagation();openCarDatePicker(btn,$(btn.dataset.dateTarget));return}if(e.target.closest('.car-date-pop'))return;if(!e.target.closest('.tx-date-btn,.weighted-date-btn'))picker.hidden=true});
+  function renderCarDatePicker(){title.textContent=`${months[pickerM-1]} ${pickerY}`;grid.innerHTML='';const [gy,gm,gd]=j2g(pickerY,pickerM,1),first=(new Date(gy,gm-1,gd).getDay()+1)%7;for(let i=0;i<first;i++)grid.appendChild(document.createElement('span'));let len=pickerM<7?31:pickerM<12?30:((()=>{const g=j2g(pickerY,pickerM,30),b=g2j(...g);return b[2]===30?30:29})());for(let d=1;d<=len;d++){const b=document.createElement('button');b.type='button';b.textContent=pad(d);if(targetInput?.value===`${pickerY}-${pad(pickerM)}-${pad(d)}`)b.classList.add('selected');b.onclick=e=>{e.stopPropagation();targetInput.value=`${pickerY}-${pad(pickerM)}-${pad(d)}`;picker.hidden=true;targetInput.dispatchEvent(new Event('input',{bubbles:true}))};grid.appendChild(b)}}
+  $('carDatePrev').onclick=e=>{e.preventDefault();e.stopPropagation();pickerM--;if(pickerM<1){pickerM=12;pickerY--}renderCarDatePicker()};$('carDateNext').onclick=e=>{e.preventDefault();e.stopPropagation();pickerM++;if(pickerM>12){pickerM=1;pickerY++}renderCarDatePicker()};
+  picker.addEventListener('click',e=>e.stopPropagation());
+  document.addEventListener('click',e=>{
+    const btn=e.target.closest?.('[data-date-target]');
+    if(btn){e.preventDefault();e.stopPropagation();const input=$(btn.dataset.dateTarget);if(input)openCarDatePicker(btn,input);return;}
+    if(!e.target.closest?.('.car-date-pop,.tx-date-btn,.weighted-date-btn'))picker.hidden=true;
+  },true);
 
   // Global amount formatting for vehicle forms; no maxlength is ever applied.
   root.addEventListener('input',e=>{if(e.target.classList.contains('amount-input'))formatAmount(e.target)});
@@ -1204,4 +1273,16 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
 })();
 
 /* Mobile navigation history: overlays first, then previous tab. */
-(()=>{const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';let internal=false;const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';history.replaceState({financeTab:currentTab()},'',location.href);document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{if(internal)return;const target=item.dataset.target;if(target&&target!==currentTab())history.pushState({financeTab:target},'',location.href)}));window.addEventListener('popstate',e=>{const modals=[...document.querySelectorAll(modalSelector)];if(modals.length){const m=modals[modals.length-1];m.classList.remove('open');m.setAttribute('aria-hidden','true');return}const target=e.state?.financeTab;if(target){const item=document.querySelector('.nav-item[data-target=+target+]');if(item){internal=true;item.click();internal=false}}});})();
+(()=>{const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';let internal=false;const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';history.replaceState({financeTab:currentTab()},'',location.href);document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{if(internal)return;const target=item.dataset.target;if(target&&target!==currentTab())history.pushState({financeTab:target},'',location.href)}));window.addEventListener('popstate',e=>{
+  const modals=[...document.querySelectorAll(modalSelector)];
+  if(modals.length){
+    const m=modals[modals.length-1];
+    m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
+    return;
+  }
+  const target=e.state?.financeTab;
+  if(target){
+    const item=document.querySelector(`.nav-item[data-target="${target}"]`);
+    if(item){internal=true;item.click();internal=false}
+  }
+});})();

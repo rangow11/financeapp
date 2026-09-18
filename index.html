@@ -14,25 +14,6 @@
 </head>
 <body>
   <div class="app-shell">
-    <header class="topbar">
-      <div class="brand">
-        <span class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none">
-            <path d="M4 10.2 12 4l8 6.2v8.3a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-8.3Z" stroke="currentColor" stroke-width="1.7"/>
-            <path d="M8 14h8M8 17h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          </svg>
-        </span>
-        <div>
-          <div class="brand-title">Finance Management</div>
-          <div class="brand-subtitle">مدیریت مالی</div>
-        </div>
-      </div>
-      <button class="theme-toggle" id="themeToggle" aria-label="تغییر حالت نمایش">
-        <svg class="icon sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-        <svg class="icon moon" viewBox="0 0 24 24" fill="none"><path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.2 8.2 0 1 0 20 15.2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
-      </button>
-    </header>
-
     <main class="viewport" id="viewport">
       <section class="page" data-page="calendar">
   <div class="calendar-head"><div><span class="section-kicker">رویدادها</span><h1>تقویم مالی</h1></div><button class="today-btn" id="todayBtn">امروز</button></div>
@@ -54,7 +35,10 @@
 </section>
 
       <section class="page" data-page="settings">
-        <div class="fm-page-head"><div><span class="section-kicker">تنظیمات</span><h1>تنظیمات برنامه</h1></div></div>
+        <div class="fm-page-head"><div><span class="section-kicker">تنظیمات</span><h1>تنظیمات برنامه</h1></div><button class="theme-toggle settings-theme-toggle" id="themeToggle" aria-label="تغییر حالت نمایش">
+          <svg class="icon sun" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="3.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="icon moon" viewBox="0 0 24 24" fill="none"><path d="M20 15.2A8.2 8.2 0 0 1 8.8 4 8.2 8.2 0 1 0 20 15.2Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        </button></div>
         <div class="fm-settings-hub">
           <section class="fm-settings-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">⚙</span><div><h2>عمومی</h2><small>تنظیمات پایه و بروزرسانی</small></div></div><div class="fm-setting-row"><div><b>بروزرسانی خودکار قیمت‌ها</b><small>فاصله استعلام مجدد قیمت‌ها را به ساعت مشخص کن.</small></div><div class="fm-hour-input"><input id="fmRefreshHours" type="number" min="0.1" step="0.1" inputmode="decimal" placeholder="1"><span>ساعت</span></div></div><button class="fm-save-setting" id="fmSaveSettings">ذخیره تنظیمات</button></section>
           <section class="fm-settings-group"><div class="fm-settings-group-head"><span class="fm-settings-group-icon">↗</span><div><h2>API و قیمت‌ها</h2><small>اتصال، کلید و مدیریت شاخص‌های نوار قیمت</small></div></div><label class="fm-setting-field"><span>آدرس API قیمت‌ها</span><input id="fmApiUrl" type="url" placeholder="آدرس API خودت را وارد کن"></label><label class="fm-setting-field"><span>کلید API / Token</span><input id="fmApiKey" type="text" placeholder="در صورت نیاز وارد کن"></label><div class="fm-setting-note">در صورت پشتیبانی API می‌توانی از <b>{keyword}</b> برای جایگزینی کلمه کلیدی استفاده کنی.</div><button class="fm-secondary-setting fm-wide-setting" id="fmMarketSettings">مدیریت شاخص‌ها و کلمات کلیدی</button></section>
@@ -96,7 +80,7 @@
         <div class="car-status-section sold-section" id="soldCarSection" hidden><div class="cars-list" id="soldCarsList"></div><div class="car-empty" id="soldCarEmpty" hidden>هنوز معامله فروخته‌شده‌ای ثبت نشده است.</div></div>
 
         <div class="car-modal" id="carFormModal" aria-hidden="true"><div class="car-sheet car-form-sheet"><div class="sheet-header"><div><span class="section-kicker" id="carFormKicker">ثبت اطلاعات</span><h2 id="carFormTitle">خودرو جدید</h2></div><button class="sheet-close" id="carFormClose">×</button></div>
-          <form id="carForm" autocomplete="off"><input type="hidden" id="carId">
+          <div class="modal-scroll-body"><form id="carForm" autocomplete="off"><input type="hidden" id="carId">
             <div class="car-form-section"><div class="car-form-section-title">اطلاعات اصلی</div><div class="form-grid two">
               <label><span>نام خودرو</span><input id="carName" required placeholder="مثلاً پژو ۲۰۷ اتومات"></label>
               <label><span>خودروساز / شرکت</span><input id="carCompany" placeholder="مثلاً ایران‌خودرو"></label>
@@ -132,10 +116,10 @@
             <div class="car-form-section"><div class="car-form-section-title">شرکا</div><div id="carPartnersEditor"></div><button type="button" class="outline-action" id="addPartnerBtn">＋ افزودن شریک</button><p class="form-hint">در حالت پیش‌فرض سهم هر شریک بر اساس آورده او از کل آورده معامله محاسبه می‌شود.</p></div>
             <label class="full-label"><span>یادداشت</span><textarea id="carNotes" rows="3" placeholder="شرایط معامله، حواله، توضیحات و..."></textarea></label>
             <div class="form-actions"><button type="button" class="secondary-action" id="carCancel">انصراف</button><button type="submit" class="primary-action">ذخیره خودرو</button></div>
-          </form></div></div>
+          </form></div></div></div>
 
-        <div class="car-modal car-detail-modal" id="carDetailModal" aria-hidden="true"><div class="car-sheet car-detail-sheet"><div class="sheet-header"><div><span class="section-kicker">پرونده خودرو</span><h2 id="carDetailTitle">—</h2></div><button class="sheet-close" id="carDetailClose">×</button></div><div id="carDetailBody"></div></div></div>
-        <div class="car-modal" id="carCumulativeModal" aria-hidden="true"><div class="car-sheet cumulative-sheet"><div class="sheet-header"><div><span class="section-kicker">گزارش سهم من</span><h2>سود تجمعی معاملات</h2></div><button class="sheet-close" id="carCumulativeClose">×</button></div><div id="cumulativeBody"></div></div></div><div class="car-modal" id="carWeightedModal" aria-hidden="true"><div class="car-sheet weighted-sheet"><div class="sheet-header"><div><span class="section-kicker">ماشین‌حساب</span><h2>محاسبه وزنی خواب پول</h2></div><button class="sheet-close" id="carWeightedClose">×</button></div><div class="weighted-body"><div class="weighted-intro">برای هر مرحله مبلغ و تاریخ پرداخت را وارد کن. این ماشین‌حساب چیزی را در اطلاعات خودرو ذخیره نمی‌کند.</div><label><span>خودرو</span><select id="weightedCarSelect"><option value="">بدون اتصال به خودرو</option></select></label><div class="weighted-spacer"></div><div class="form-grid two"><label class="jalali-car-date"><span>تاریخ تحویل</span><div class="car-date-wrap"><input id="weightedDeliveryDate" inputmode="numeric" value=""><button type="button" id="weightedDeliveryPicker" data-date-target="weightedDeliveryDate">▦</button></div></label><div class="weighted-summary"><span>کل مدت انتظار</span><b id="weightedDays">۰ روز</b></div></div><div class="weighted-section-head"><b>مراحل پرداخت</b><button type="button" class="outline-action" id="weightedAddStage">＋ مرحله</button></div><div id="weightedStages"></div><div class="weighted-results"><div><span>مجموع پرداخت</span><b id="weightedTotal">۰ تومان</b></div><div><span>مبلغ وزنی</span><b id="weightedAverage">۰ تومان</b></div></div><div class="weighted-partners" id="weightedPartners"></div><div class="weighted-formula"><span>فرمول</span><b id="weightedFormula">—</b></div></div></div></div>
+        <div class="car-modal car-detail-modal" id="carDetailModal" aria-hidden="true"><div class="car-sheet car-detail-sheet"><div class="sheet-header"><div><span class="section-kicker">پرونده خودرو</span><h2 id="carDetailTitle">—</h2></div><button class="sheet-close" id="carDetailClose">×</button></div><div id="carDetailBody" class="modal-scroll-body"></div></div></div>
+        <div class="car-modal" id="carCumulativeModal" aria-hidden="true"><div class="car-sheet cumulative-sheet"><div class="sheet-header"><div><span class="section-kicker">گزارش سهم من</span><h2>سود تجمعی معاملات</h2></div><button class="sheet-close" id="carCumulativeClose">×</button></div><div id="cumulativeBody"></div></div></div><div class="car-modal" id="carWeightedModal" aria-hidden="true"><div class="car-sheet weighted-sheet"><div class="sheet-header"><div><span class="section-kicker">ماشین‌حساب</span><h2>محاسبه وزنی خواب پول</h2></div><button class="sheet-close" id="carWeightedClose">×</button></div><div class="weighted-body modal-scroll-body"><div class="weighted-intro">برای هر مرحله مبلغ و تاریخ پرداخت را وارد کن. این ماشین‌حساب چیزی را در اطلاعات خودرو ذخیره نمی‌کند.</div><label><span>خودرو</span><select id="weightedCarSelect"><option value="">بدون اتصال به خودرو</option></select></label><div class="weighted-spacer"></div><div class="form-grid two"><label class="jalali-car-date"><span>تاریخ تحویل</span><div class="car-date-wrap"><input id="weightedDeliveryDate" inputmode="numeric" value=""><button type="button" id="weightedDeliveryPicker" data-date-target="weightedDeliveryDate">▦</button></div></label><div class="weighted-summary"><span>کل مدت انتظار</span><b id="weightedDays">۰ روز</b></div></div><div class="weighted-section-head"><b>مراحل پرداخت</b><button type="button" class="outline-action" id="weightedAddStage">＋ مرحله</button></div><div id="weightedStages"></div><div class="weighted-results"><div><span>مجموع پرداخت</span><b id="weightedTotal">۰ تومان</b></div><div><span>مبلغ وزنی</span><b id="weightedAverage">۰ تومان</b></div></div><div class="weighted-partners" id="weightedPartners"></div><div class="weighted-formula"><span>فرمول</span><b id="weightedFormula">—</b></div></div></div></div>
         <div class="car-modal" id="carReceiptModal" aria-hidden="true"><div class="car-sheet receipt-sheet"><div class="sheet-header"><div><span class="section-kicker">رسید تراکنش</span><h2 id="receiptTitle">—</h2></div><button class="sheet-close" id="receiptClose">×</button></div><div id="receiptBody"></div></div></div>
         <div class="car-modal" id="carNoteModal" aria-hidden="true"><div class="car-sheet car-note-sheet"><div class="sheet-header"><div><span class="section-kicker">یادداشت خودرو</span><h2 id="carNoteTitle">—</h2></div><button class="sheet-close" id="carNoteClose">×</button></div><div class="car-note-page"><textarea id="carNoteInput" rows="12" placeholder="یادداشت‌های این خودرو را اینجا بنویس..."></textarea><div class="form-actions"><button type="button" class="secondary-action" id="carNoteCancel">انصراف</button><button type="button" class="primary-action" id="carNoteSave">ذخیره یادداشت</button></div></div></div></div>
         <div class="car-date-pop" id="carDatePicker" hidden><div class="car-date-head"><button id="carDatePrev">‹</button><strong id="carDateTitle"></strong><button id="carDateNext">›</button></div><div class="car-date-week"><span>ش</span><span>ی</span><span>د</span><span>س</span><span>چ</span><span>پ</span><span>ج</span></div><div class="car-date-grid" id="carDateGrid"></div></div>
@@ -184,7 +168,7 @@
   <div class="loan-modal" id="loanFormModal" aria-hidden="true">
     <div class="loan-sheet">
       <div class="sheet-header"><div><span class="section-kicker" id="loanFormKicker">ثبت اطلاعات</span><h2 id="loanFormTitle">وام جدید</h2></div><button class="sheet-close" id="loanFormClose">×</button></div>
-      <form id="loanForm" autocomplete="off">
+      <div class="modal-scroll-body"><form id="loanForm" autocomplete="off">
         <input type="hidden" id="loanId">
         <div class="form-grid two">
           <label><span>نام بانک / موسسه</span><input id="loanBank" required placeholder="مثلاً بانک ملت"></label>
@@ -214,11 +198,11 @@
         <label class="full-label"><span>یادداشت</span><textarea id="loanNotes" rows="3" placeholder="ضمانت، شعبه، شرایط خاص و..." ></textarea></label>
         <label class="active-loan-row"><input id="loanActive" type="checkbox" checked><span class="switch"></span><span><b>وام فعال</b><small>در صورت غیرفعال بودن، در فهرست نمایش داده نمی‌شود.</small></span></label>
         <div class="form-actions"><button type="button" class="secondary-action" id="loanCancel">انصراف</button><button type="submit" class="primary-action">ذخیره وام</button></div>
-      </form>
+      </form></div></div>
     </div>
   </div>
 
-  <div class="loan-modal" id="loanDetailModal" aria-hidden="true"><div class="loan-sheet detail-sheet"><div class="sheet-header"><div><span class="section-kicker">جزئیات وام</span><h2 id="detailLoanTitle">—</h2></div><button class="sheet-close" id="loanDetailClose">×</button></div><div id="loanDetailsBody"></div></div></div>
+  <div class="loan-modal" id="loanDetailModal" aria-hidden="true"><div class="loan-sheet detail-sheet"><div class="sheet-header"><div><span class="section-kicker">جزئیات وام</span><h2 id="detailLoanTitle">—</h2></div><button class="sheet-close" id="loanDetailClose">×</button></div><div id="loanDetailsBody" class="modal-scroll-body"></div></div></div>
   <div class="loan-modal" id="loanNoteModal" aria-hidden="true"><div class="loan-sheet note-sheet"><div class="sheet-header"><div><span class="section-kicker">یادداشت</span><h2 id="noteLoanTitle">—</h2></div><button class="sheet-close" id="loanNoteClose">×</button></div><textarea id="noteInput" rows="7" placeholder="یادداشت خودت را بنویس..."></textarea><div class="form-actions"><button class="secondary-action" id="noteCancel">انصراف</button><button class="primary-action" id="noteSave">ذخیره یادداشت</button></div></div></div>
   <div class="loan-modal" id="loanPaidModal" aria-hidden="true"><div class="loan-sheet paid-sheet"><div class="sheet-header"><div><span class="section-kicker">ثبت تراکنش</span><h2 id="loanPaidModalTitle">ثبت مبلغ پرداخت‌شده</h2></div><button class="sheet-close" id="loanPaidClose">×</button></div><div class="paid-modal-intro"><b id="loanPaidMonthHint">—</b><span>فقط مبلغی را که واقعاً پرداخت کرده‌ای وارد کن. تاریخ امروز فقط به عنوان تاریخ ثبت تراکنش ذخیره می‌شود و وضعیت وام به‌صورت خودکار محاسبه خواهد شد.</span></div><label class="paid-amount-field"><span>مبلغ پرداخت‌شده</span><div class="paid-amount-wrap"><input id="loanPaymentAmount" inputmode="numeric" autocomplete="off" placeholder="مبلغ را به تومان وارد کنید"><small>تومان</small></div></label><div class="form-actions"><button type="button" class="secondary-action" id="loanPaidCancel">انصراف</button><button type="button" class="primary-action" id="loanPaidConfirm">ثبت پرداخت</button></div></div></div>
 
