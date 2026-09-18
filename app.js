@@ -1,3 +1,19 @@
+/* REAL VIEWPORT HEIGHT — keeps the top bar and bottom tabs both fully
+   visible on one screen, with no page scroll needed, even on mobile
+   browsers/webviews whose address bar changes the visible height. */
+(function initAppViewportHeight() {
+  function setAppVH() {
+    const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+    document.documentElement.style.setProperty('--app-vh', (h / 100) + 'px');
+  }
+  setAppVH();
+  window.addEventListener('resize', setAppVH, { passive: true });
+  window.addEventListener('orientationchange', () => setTimeout(setAppVH, 60), { passive: true });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', setAppVH, { passive: true });
+  }
+})();
+
 (() => {
   'use strict';
 
