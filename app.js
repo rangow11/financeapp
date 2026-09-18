@@ -130,7 +130,22 @@
   // Service worker.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+      navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(reg => {
+        // Check for a newer sw.js whenever the app regains focus, so updates
+        // aren't missed even if the browser's own periodic check is delayed.
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update().catch(() => {});
+        });
+      }).catch(() => {});
+
+      // Once a new service worker takes control, reload once so the page
+      // actually uses the fresh files instead of staying on the old ones.
+      let reloadedForUpdate = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (reloadedForUpdate) return;
+        reloadedForUpdate = true;
+        window.location.reload();
+      });
     });
   }
 
