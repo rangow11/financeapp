@@ -100,6 +100,12 @@
 
     isAnimating = true;
 
+    // Highlight the destination tab button right away so it changes in sync
+    // with the page transition instead of after it finishes.
+    navItems.forEach(item => {
+      item.classList.toggle('active', item.dataset.target === order[nextIndex]);
+    });
+
     // direction = 1 means left swipe: new page enters from right -> left.
     // direction = -1 means right swipe: new page enters from left -> right.
     const start = direction > 0 ? 100 : -100;
@@ -785,14 +791,20 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     if(m.classList.contains('open'))return;
     m.classList.add('open');m.setAttribute('aria-hidden','false');
     m.dataset.historyManaged='true';
-    history.pushState({financeTab:document.querySelector('.nav-item.active')?.dataset.target||'dashboard',modalId:m.id},'',location.href);
+    const NAV=window.__financeNav||(window.__financeNav={sid:String(Date.now())+Math.random().toString(36).slice(2),prog:false});
+    history.pushState({financeTab:document.querySelector('.nav-item.active')?.dataset.target||'dashboard',modalId:m.id,sid:NAV.sid},'',location.href);
   }
   function closeModal(m){
     if(!m)return;
     const managed=m.dataset.historyManaged==='true';
     const isCurrent=history.state?.modalId===m.id;
     m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
-    if(managed&&isCurrent){history.back()}
+    if(managed&&isCurrent){
+      // Tell the global back-button handler this popstate is our own cleanup, not a user back press.
+      const NAV=window.__financeNav||(window.__financeNav={sid:String(Date.now())+Math.random().toString(36).slice(2),prog:false});
+      NAV.prog=true;clearTimeout(NAV.progTimer);NAV.progTimer=setTimeout(()=>{NAV.prog=false},800);
+      history.back();
+    }
   };
   function resetForm(c){$('carForm').reset();$('carId').value=c?.id||'';$('carFormKicker').textContent=c?'ویرایش اطلاعات':'ثبت اطلاعات';$('carFormTitle').textContent=c?'ویرایش خودرو':'خودرو جدید';$('carName').value=c?.name||'';$('carCompany').value=c?.company||'';$('carSaleType').value=c?.saleType||'فوری';$('carFactoryPrice').value=c?.factoryPrice?fmt(c.factoryPrice):'';$('carOwnerName').value=c?.ownerName||'';$('carNationalId').value=c?.nationalId||'';$('carRequestNo').value=c?.requestNo||'';$('carAdmissionNo').value=c?.admissionNo||'';$('carRegisterDate').value=c?.registerDate||jToday();$('carDeliveryDate').value=c?.deliveryDate||'';$('carDelayRate').value=c?.delayRate??'';$('carDelayDays').value=c?.delayDays?fmt(c.delayDays):'';$('carDelayProfit').value=c?.delayProfit?fmt(c.delayProfit):'';$('carDelayBase').value=c?.delayBase||'factory';$('carDelayCustom').value=c?.delayCustom?fmt(c.delayCustom):'';$('carStatus').value=c?.status||'active';$('carMarketPrice').value=c?.marketPrice?fmt(c.marketPrice):'';$('carDeliveryActual').value=c?.deliveryActual||'';$('carSaleDate').value=c?.saleDate||'';$('carNotes').value=c?.notes||'';renderPartnersEditor(c?.partners||[defaultPartner()]);toggleCustomDelay();syncFormDelay();}
   function openForm(c=null){resetForm(c);openModal($('carFormModal'));setTimeout(()=>$('carName').focus(),100)}
@@ -1342,55 +1354,59 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   window.financeRefreshHome=()=>{if(settings.apiUrl)refreshPrices();else render()};
 })();
 
-/* Mobile navigation history: overlays first, then home, then refresh, then
-   exit — the same order Instagram's back button follows. */
+/* Mobile navigation history (Android back button):
+   1) an open overlay/page is closed,
+   2) from any other tab -> back to the Dashboard tab,
+   3) from the Dashboard -> the app exits.
+   History layout: [base][guard][modal entries...]. The guard entry is what
+   lets us catch a back press; a press that lands on "base" (or on anything
+   that isn't ours) is a real top-level back press. */
 (()=>{
   const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';
+  const NAV=window.__financeNav||(window.__financeNav={sid:String(Date.now())+Math.random().toString(36).slice(2),prog:false});
   let internal=false;
-  let homeRefreshArmed=false; // becomes true once we've already refreshed home on this "visit"
   const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';
   const goHome=()=>{const item=document.querySelector('.nav-item[data-target="dashboard"]');if(item){internal=true;item.click();internal=false}};
-  const guard=()=>history.pushState({financeGuard:true},'',location.href);
+  const guard=()=>history.pushState({financeGuard:true,sid:NAV.sid},'',location.href);
 
-  guard(); // one extra entry so the very first back press is ours to catch
-
-  document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{
-    if(internal)return;
-    homeRefreshArmed=false; // left home (or switched tabs) — arm the refresh step again
-  }));
+  history.replaceState({financeBase:true,sid:NAV.sid},'',location.href);
+  guard(); // one extra entry so the first back press is ours to catch
 
   window.addEventListener('popstate',e=>{
+    const st=e.state,own=!!st&&st.sid===NAV.sid;
+
+    // closeModal() calls history.back() itself after Cancel/×/Save; that
+    // popstate is just cleanup and must not trigger any navigation.
+    if(NAV.prog){NAV.prog=false;clearTimeout(NAV.progTimer);return}
+
+    // 1) Close the top-most open overlay.
     const modals=[...document.querySelectorAll(modalSelector)];
     if(modals.length){
       const m=modals[modals.length-1];
       m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
-      guard();
+      // If the pop consumed our guard entry (overlay had no history entry of its own), put it back.
+      if(!(own&&(st.financeGuard||st.modalId)))guard();
       return;
     }
-    // The car page's own modals manage their own history entry and call
-    // history.back() when closed from an in-app button (Cancel/×/Save) —
-    // that also fires this same popstate. Only run the home/refresh/exit
-    // cascade once we've actually landed back on one of OUR OWN checkpoints;
-    // otherwise just quietly re-plant a checkpoint and do nothing else, so
-    // closing a form with Cancel never jumps the user to another tab.
-    if(!e.state?.financeGuard){
-      guard();
+
+    // Landed on our guard with nothing open (leftover overlay entry): treat as a back press.
+    if(own&&st.financeGuard){
+      if(currentTab()!=='dashboard'){goHome();return}
+      history.back(); // continue on to the base entry -> exit branch below
       return;
     }
+
+    // 2) Any other tab -> Dashboard.
     if(currentTab()!=='dashboard'){
       goHome();
       guard();
       return;
     }
-    if(!homeRefreshArmed){
-      homeRefreshArmed=true;
-      window.financeRefreshHome?.();
-      guard();
-      return;
-    }
-    // Already home, already refreshed once, nothing left open: let this back
-    // press through so the browser/PWA actually exits, instead of re-arming
-    // the guard and trapping the user on the home tab forever.
+
+    // 3) Dashboard, nothing open: leave the app. If the browser has nowhere
+    // to go back to (e.g. a fresh tab), re-plant the guard so the app keeps working.
+    history.back();
+    setTimeout(()=>{if(document.visibilityState==='visible'&&history.state&&!history.state.financeGuard)guard()},400);
   });
 })();
 
