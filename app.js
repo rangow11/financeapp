@@ -61,6 +61,22 @@
     return document.querySelector(`.page[data-page="${name}"]`);
   }
 
+  // Swiped-open cards (loan/car/dashboard asset rows) should never survive a
+  // tab switch — reopening a tab later showed whatever was left half-open.
+  function resetSwipes(page) {
+    if (!page) return;
+    page.querySelectorAll('.loan-swipe').forEach(w => {
+      const card = w.querySelector('.loan-card'), actions = w.querySelector('.loan-actions');
+      if (card) { card.style.transition = 'none'; card.style.transform = 'translate3d(0,0,0)'; }
+      if (actions) { actions.classList.remove('visible'); actions.setAttribute('aria-hidden', 'true'); }
+    });
+    page.querySelectorAll('.car-swipe.swiped').forEach(w => w.classList.remove('swiped'));
+    page.querySelectorAll('.fm-asset-shell.swiped-left, .fm-asset-shell.swiped-right').forEach(el => {
+      el.classList.remove('swiped-left', 'swiped-right');
+      el.style.setProperty('--swipe-x', '0px');
+    });
+  }
+
   function syncSelection() {
     navItems.forEach(item => {
       item.classList.toggle('active', item.dataset.target === order[currentIndex]);
@@ -77,6 +93,7 @@
     const oldPage = pageFor(order[currentIndex]);
     const newPage = pageFor(order[nextIndex]);
     if (!oldPage || !newPage) return;
+    resetSwipes(oldPage);
 
     // Every tab always opens from its top, even if it was previously scrolled.
     newPage.scrollTop = 0;
@@ -290,14 +307,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     let startX=0,startY=0,drag=false,open=false;
     const card=wrap.querySelector('.loan-card'),actions=wrap.querySelector('.loan-actions');
     const width=()=>Math.min(150,Math.max(138,actions.offsetWidth||150));
-    function set(x,animate=true){card.style.transition=animate?'transform .42s cubic-bezier(.22,.75,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open));
-      // The card keeps sliding for up to .42s after open() is called; while
-      // it's mid-slide it still sits above the actions row (z-index) and
-      // would eat the very first tap on a button underneath it. Turning off
-      // pointer-events the instant we decide to open — not once the CSS
-      // transition finishes — makes the action buttons hittable immediately.
-      wrap.classList.toggle('open',open);
-    }
+    function set(x,animate=true){card.style.transition=animate?'transform .42s cubic-bezier(.22,.75,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open))}
     function close(){set(0,true)}
     function finish(dx){set(dx<-45?-width():0,true)}
     card.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;startX=e.touches[0].clientX;startY=e.touches[0].clientY;drag=true},{passive:true});
@@ -308,10 +318,6 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     card.addEventListener('pointerdown',e=>{if(e.pointerType==='touch')return;down=true;startX=e.clientX;startY=e.clientY});
     card.addEventListener('pointerup',e=>{if(!down)return;down=false;const dx=e.clientX-startX,dy=e.clientY-startY;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.05)finish(dx)});
     actions.addEventListener('click',e=>{const b=e.target.closest('button');if(b){e.stopPropagation();handleAction(wrap.dataset.id,b.dataset.act);close()}});
-    // With the card's pointer-events off while open, a tap anywhere else on
-    // the row (not a button) now reaches the wrapper instead — use that to
-    // keep "tap elsewhere closes it" working.
-    wrap.addEventListener('click',e=>{if(open&&!e.target.closest('.loan-actions'))close()});
   }
   function get(id){return loans.find(x=>String(x.id)===String(id))}
   function jalaliMonthKey(y,m){return `${y}-${String(m).padStart(2,'0')}`;}
@@ -1298,7 +1304,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       let sx=0,dx=0,drag=false,moved=false;
       const state=()=>el.classList.contains('swiped-left')?'left':el.classList.contains('swiped-right')?'right':'closed';
       const close=()=>{el.classList.remove('swiped-left','swiped-right');el.style.setProperty('--swipe-x','0px')};
-      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;moved=false;if(e.target.closest('button'))return;sx=e.clientX;dx=0;drag=true;el.setPointerCapture?.(e.pointerId)};
+      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;if(e.target.closest('button'))return;sx=e.clientX;dx=0;moved=false;drag=true;el.setPointerCapture?.(e.pointerId)};
       el.onpointermove=e=>{if(!drag)return;dx=e.clientX-sx;if(Math.abs(dx)>8)moved=true;if(Math.abs(dx)>6)e.preventDefault();const st=state();let base=st==='left'?-142:st==='right'?142:0;let x=base+dx;if(st==='left'&&dx>0)x=Math.min(0,base+dx);if(st==='right'&&dx<0)x=Math.max(0,base+dx);x=Math.max(-142,Math.min(142,x));el.style.setProperty('--swipe-x',x+'px')};
       el.onpointerup=()=>{if(!drag)return;drag=false;const st=state(),x=dx;if(st==='left'){if(x>25)close();else el.style.setProperty('--swipe-x','-142px');return}if(st==='right'){if(x<-25)close();else el.style.setProperty('--swipe-x','142px');return}if(Math.abs(x)>55){el.classList.toggle('swiped-left',x<0);el.classList.toggle('swiped-right',x>0);el.style.setProperty('--swipe-x',x<0?'-142px':'142px')}else el.style.setProperty('--swipe-x','0px')};
       el.onpointercancel=()=>{drag=false;el.style.setProperty('--swipe-x','0px')};
@@ -1333,11 +1339,21 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     homeRefreshArmed=false; // left home (or switched tabs) — arm the refresh step again
   }));
 
-  window.addEventListener('popstate',()=>{
+  window.addEventListener('popstate',e=>{
     const modals=[...document.querySelectorAll(modalSelector)];
     if(modals.length){
       const m=modals[modals.length-1];
       m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
+      guard();
+      return;
+    }
+    // The car page's own modals manage their own history entry and call
+    // history.back() when closed from an in-app button (Cancel/×/Save) —
+    // that also fires this same popstate. Only run the home/refresh/exit
+    // cascade once we've actually landed back on one of OUR OWN checkpoints;
+    // otherwise just quietly re-plant a checkpoint and do nothing else, so
+    // closing a form with Cancel never jumps the user to another tab.
+    if(!e.state?.financeGuard){
       guard();
       return;
     }
