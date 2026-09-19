@@ -1,6 +1,23 @@
 (() => {
   'use strict';
 
+  // Lock the app's usable height to a snapshot of window.innerHeight instead
+  // of always trusting 100dvh. On mobile browsers, 100dvh recalculates the
+  // instant the address bar hides/shows — which can happen mid-scroll, even
+  // inside a nested scrollable — and that mid-scroll resize is what made the
+  // bottom nav appear to "jump up" and eat into the page. We only update
+  // this on real resizes (rotation, keyboard, browser chrome settling), not
+  // on every scroll tick, so the shell's height — and the bottom nav pinned
+  // to its bottom edge — stays put while the user scrolls.
+  (function lockAppHeight() {
+    const set = () => {
+      document.documentElement.style.setProperty('--app-height', window.innerHeight + 'px');
+    };
+    set();
+    window.addEventListener('resize', set, { passive: true });
+    window.addEventListener('orientationchange', () => setTimeout(set, 200), { passive: true });
+  })();
+
   const pages = Array.from(document.querySelectorAll('.page'));
   const navItems = Array.from(document.querySelectorAll('.nav-item'));
   const viewport = document.getElementById('viewport');
@@ -273,7 +290,14 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     let startX=0,startY=0,drag=false,open=false;
     const card=wrap.querySelector('.loan-card'),actions=wrap.querySelector('.loan-actions');
     const width=()=>Math.min(150,Math.max(138,actions.offsetWidth||150));
-    function set(x,animate=true){card.style.transition=animate?'transform .42s cubic-bezier(.22,.75,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open))}
+    function set(x,animate=true){card.style.transition=animate?'transform .42s cubic-bezier(.22,.75,.25,1)':'none';card.style.transform=`translate3d(${x}px,0,0)`;open=x<0;actions.classList.toggle('visible',open);actions.setAttribute('aria-hidden',String(!open));
+      // The card keeps sliding for up to .42s after open() is called; while
+      // it's mid-slide it still sits above the actions row (z-index) and
+      // would eat the very first tap on a button underneath it. Turning off
+      // pointer-events the instant we decide to open — not once the CSS
+      // transition finishes — makes the action buttons hittable immediately.
+      wrap.classList.toggle('open',open);
+    }
     function close(){set(0,true)}
     function finish(dx){set(dx<-45?-width():0,true)}
     card.addEventListener('touchstart',e=>{if(e.touches.length!==1)return;startX=e.touches[0].clientX;startY=e.touches[0].clientY;drag=true},{passive:true});
@@ -284,6 +308,10 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     card.addEventListener('pointerdown',e=>{if(e.pointerType==='touch')return;down=true;startX=e.clientX;startY=e.clientY});
     card.addEventListener('pointerup',e=>{if(!down)return;down=false;const dx=e.clientX-startX,dy=e.clientY-startY;if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.05)finish(dx)});
     actions.addEventListener('click',e=>{const b=e.target.closest('button');if(b){e.stopPropagation();handleAction(wrap.dataset.id,b.dataset.act);close()}});
+    // With the card's pointer-events off while open, a tap anywhere else on
+    // the row (not a button) now reaches the wrapper instead — use that to
+    // keep "tap elsewhere closes it" working.
+    wrap.addEventListener('click',e=>{if(open&&!e.target.closest('.loan-actions'))close()});
   }
   function get(id){return loans.find(x=>String(x.id)===String(id))}
   function jalaliMonthKey(y,m){return `${y}-${String(m).padStart(2,'0')}`;}
@@ -1178,7 +1206,16 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     if(!f)return 0;
     return norm(f.item.unit)==='ریال'?f.price/10:f.price;
   }
-  function findBrsQuote(data,keyword){
+  // Tehran crypto markets are priced against Tether, not the official/free
+  // dollar rate, and those two toman rates can differ a lot — so a
+  // dollar-denominated crypto quote (BTC/ETH/... in USD) must be converted
+  // using the live USDT_IRT (تتر) rate, not getBrsUsdRate().
+  function getBrsUsdtRate(data){
+    const f=findBrsInstrument(data,{symbol:'USDT_IRT',keywords:['USDT_IRT','دلار تتر']});
+    if(!f)return 0;
+    return norm(f.item.unit)==='ریال'?f.price/10:f.price;
+  }
+  function findBrsQuote(data,keyword,isCrypto){
     if(!data||!keyword)return null;
     const k=norm(keyword);
     if(k==='usdt'||k==='تتر'||k==='usdt irt'){
@@ -1196,7 +1233,9 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       if(unit==='ریال')toman/=10;
       if(unit==='دلار'){
         usd=toman;
-        const rate=getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0;
+        const rate=isCrypto
+          ?(getBrsUsdtRate(data)||getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0)
+          :(getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0);
         toman=rate>0?toman*rate:0;
       }
     }
@@ -1204,14 +1243,16 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   }
   function updateTickerFromBrsData(data){
     const rate=getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0;
+    const usdtRate=getBrsUsdtRate(data)||rate;
     const tickerDefs=settings.marketDefs?.length?settings.marketDefs:marketDefs;
     tickerDefs.forEach(t=>{
       const f=findBrsInstrument(data,{symbol:t.keyword||t.key,keywords:[t.keyword,t.name]});
       if(!f)return;
+      const isCrypto=t.category==='رمزارزها';
       const unit=norm(f.item.unit),raw=f.price;let toman=raw,usdVal=null;
       const pt=brsNumber(f.item.price_toman);
       if(Number.isFinite(pt)&&pt>0&&f.item.price_toman!==undefined){toman=pt;usdVal=brsNumber(f.item.price);}
-      else if(unit==='دلار'){usdVal=raw;toman=rate>0?raw*rate:0;}
+      else if(unit==='دلار'){usdVal=raw;const r=isCrypto?usdtRate:rate;toman=r>0?raw*r:0;}
       else if(unit==='ریال')toman=raw/10;
       if(toman>0)market[t.key]={price:toman,change:brsNumber(f.item.change_percent)??0};
     });
@@ -1234,11 +1275,11 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({...x}))).filter(x=>x.enabled!==false);
       let count=0;
       for(const d of defs){
-        const q=findBrsQuote(data,d.keyword||d.key||d.name);
+        const q=findBrsQuote(data,d.keyword||d.key||d.name,d.category==='رمزارزها');
         if(q&&q.toman>0){market[d.key]={price:q.toman,change:brsNumber(q.item.change_percent)??0};count++;}
       }
       for(const a of assets.filter(x=>(x.priceMode||'manual')==='api'&&(x.keyword||x.name))){
-        const q=findBrsQuote(data,a.keyword||a.name);
+        const q=findBrsQuote(data,a.keyword||a.name,a.category==='crypto');
         if(q&&q.toman>0){a.currentPrice=Math.round(q.toman);if(q.usd!=null)a.apiUsdPrice=q.usd;else delete a.apiUsdPrice;}
       }
       updateTickerFromBrsData(data);
@@ -1257,7 +1298,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       let sx=0,dx=0,drag=false,moved=false;
       const state=()=>el.classList.contains('swiped-left')?'left':el.classList.contains('swiped-right')?'right':'closed';
       const close=()=>{el.classList.remove('swiped-left','swiped-right');el.style.setProperty('--swipe-x','0px')};
-      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;if(e.target.closest('button'))return;sx=e.clientX;dx=0;moved=false;drag=true;el.setPointerCapture?.(e.pointerId)};
+      el.onpointerdown=e=>{if(e.pointerType==='mouse'&&e.button!==0)return;moved=false;if(e.target.closest('button'))return;sx=e.clientX;dx=0;drag=true;el.setPointerCapture?.(e.pointerId)};
       el.onpointermove=e=>{if(!drag)return;dx=e.clientX-sx;if(Math.abs(dx)>8)moved=true;if(Math.abs(dx)>6)e.preventDefault();const st=state();let base=st==='left'?-142:st==='right'?142:0;let x=base+dx;if(st==='left'&&dx>0)x=Math.min(0,base+dx);if(st==='right'&&dx<0)x=Math.max(0,base+dx);x=Math.max(-142,Math.min(142,x));el.style.setProperty('--swipe-x',x+'px')};
       el.onpointerup=()=>{if(!drag)return;drag=false;const st=state(),x=dx;if(st==='left'){if(x>25)close();else el.style.setProperty('--swipe-x','-142px');return}if(st==='right'){if(x<-25)close();else el.style.setProperty('--swipe-x','142px');return}if(Math.abs(x)>55){el.classList.toggle('swiped-left',x<0);el.classList.toggle('swiped-right',x>0);el.style.setProperty('--swipe-x',x<0?'-142px':'142px')}else el.style.setProperty('--swipe-x','0px')};
       el.onpointercancel=()=>{drag=false;el.style.setProperty('--swipe-x','0px')};
@@ -1270,19 +1311,129 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   $('fmDashboardToolsToggle').onclick=()=>{settings.ui={...(settings.ui||{}),searchToolsCollapsed:!settings.ui?.searchToolsCollapsed};write(SET,settings);applyDashboardUi()};$('fmChartToggle').onclick=()=>{settings.ui={...(settings.ui||{}),chartCollapsed:!settings.ui?.chartCollapsed};write(SET,settings);applyDashboardUi();if(!settings.ui.chartCollapsed)requestAnimationFrame(renderChart)};$('fmNumberTabs').querySelectorAll('[data-number-mode]').forEach(b=>b.onclick=()=>{numberMode=b.dataset.numberMode;saveUi();syncDashboardSelections();render()});$('fmViewTabs').querySelectorAll('[data-assets-view]').forEach(b=>b.onclick=()=>{assetsView=b.dataset.assetsView;saveUi();syncDashboardSelections();renderAssets()});$('fmPnlTabs').querySelectorAll('[data-pnl-period]').forEach(b=>b.onclick=()=>{pnlPeriod=b.dataset.pnlPeriod;saveUi();syncDashboardSelections();renderSummary()});$('fmChartTabs').querySelectorAll('[data-chart-unit]').forEach(b=>b.onclick=()=>{chartUnit=b.dataset.chartUnit;saveUi();syncDashboardSelections();renderChart()});
   $('fmAssetsList').addEventListener('click',e=>{const shell=e.target.closest('.fm-asset-shell');if(!shell)return;const id=shell.dataset.assetId;if(shell.dataset.vehicleId){const carNav=document.querySelector('.nav-item[data-target="car"]');carNav?.click();return}if(e.target.closest('[data-buy]'))tradeModal(id,'buy');else if(e.target.closest('[data-sell]'))tradeModal(id,'sell');else if(e.target.closest('[data-ledger]'))ledgerModal(id);else if(e.target.closest('[data-details]'))assetDetailsModal(id);else if(e.target.closest('[data-fm-edit]'))assetModal(id);else if(e.target.closest('[data-fm-delete]')){const a=assets.find(x=>String(x.id)===String(id));if(a&&confirm(`دارایی «${a.name}» حذف شود؟`)){assets=assets.filter(x=>x!==a);transactions=transactions.filter(t=>String(t.assetId)!==String(id));write(STORE,assets);write(TX,transactions);snapshot();render();toast('دارایی حذف شد')}}else if(e.target.closest('[data-note]'))noteModal(id)});
   window.addEventListener('finance-tab-changed',e=>{if(e.detail?.name==='dashboard'){requestAnimationFrame(()=>{render();requestAnimationFrame(renderChart)})}});window.addEventListener('resize',()=>{if(document.querySelector('.dashboard-page.active'))renderChart()});window.addEventListener('storage',e=>{if([STORE,CAT,SET,SNAP,MARKET,TX,ASSET_DEF].includes(e.key)){assets=read(STORE,[]);categories=read(CAT,categories);settings=read(SET,settings);snapshots=read(SNAP,[]);market=read(MARKET,market);transactions=read(TX,[]);assetDefinitions=read(ASSET_DEF,assetDefinitions);render()}});syncPortfolioEvents();snapshot();render();armTimer();
+  // Shared refresh hook used by both the Instagram-style back button (home
+  // tab, first back press) and the custom pull-to-refresh gesture.
+  window.financeRefreshHome=()=>{if(settings.apiUrl)refreshPrices();else render()};
 })();
 
-/* Mobile navigation history: overlays first, then previous tab. */
-(()=>{const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';let internal=false;const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';history.replaceState({financeTab:currentTab()},'',location.href);document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{if(internal)return;const target=item.dataset.target;if(target&&target!==currentTab())history.pushState({financeTab:target},'',location.href)}));window.addEventListener('popstate',e=>{
-  const modals=[...document.querySelectorAll(modalSelector)];
-  if(modals.length){
-    const m=modals[modals.length-1];
-    m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
-    return;
+/* Mobile navigation history: overlays first, then home, then refresh, then
+   exit — the same order Instagram's back button follows. */
+(()=>{
+  const modalSelector='.car-modal.open,.loan-modal.open,.fm-modal.open,.event-modal.open';
+  let internal=false;
+  let homeRefreshArmed=false; // becomes true once we've already refreshed home on this "visit"
+  const currentTab=()=>document.querySelector('.nav-item.active')?.dataset.target||'dashboard';
+  const goHome=()=>{const item=document.querySelector('.nav-item[data-target="dashboard"]');if(item){internal=true;item.click();internal=false}};
+  const guard=()=>history.pushState({financeGuard:true},'',location.href);
+
+  guard(); // one extra entry so the very first back press is ours to catch
+
+  document.querySelectorAll('.nav-item').forEach(item=>item.addEventListener('click',()=>{
+    if(internal)return;
+    homeRefreshArmed=false; // left home (or switched tabs) — arm the refresh step again
+  }));
+
+  window.addEventListener('popstate',()=>{
+    const modals=[...document.querySelectorAll(modalSelector)];
+    if(modals.length){
+      const m=modals[modals.length-1];
+      m.classList.remove('open');m.setAttribute('aria-hidden','true');delete m.dataset.historyManaged;
+      guard();
+      return;
+    }
+    if(currentTab()!=='dashboard'){
+      goHome();
+      guard();
+      return;
+    }
+    if(!homeRefreshArmed){
+      homeRefreshArmed=true;
+      window.financeRefreshHome?.();
+      guard();
+      return;
+    }
+    // Already home, already refreshed once, nothing left open: let this back
+    // press through so the browser/PWA actually exits, instead of re-arming
+    // the guard and trapping the user on the home tab forever.
+  });
+})();
+
+/* Custom pull-to-refresh. Native browser pull-to-refresh reloads the whole
+   page and wipes in-memory state, so it's disabled (overscroll-behavior on
+   .page) and replaced with this in-app four-dot indicator: pull down from
+   the top of a page, the dots fill in and change color once you've pulled
+   far enough, and releasing there spins them while the data refreshes. */
+(()=>{
+  const viewport=document.getElementById('viewport');
+  if(!viewport)return;
+  const indicator=document.createElement('div');
+  indicator.className='ptr-indicator';
+  indicator.setAttribute('aria-hidden','true');
+  indicator.innerHTML='<svg viewBox="0 0 40 40">'
+    +'<circle class="ptr-dot" cx="20" cy="8" r="3.4"/>'
+    +'<circle class="ptr-dot" cx="32" cy="20" r="3.4"/>'
+    +'<circle class="ptr-dot" cx="20" cy="32" r="3.4"/>'
+    +'<circle class="ptr-dot" cx="8" cy="20" r="3.4"/>'
+    +'</svg>';
+  viewport.prepend(indicator);
+
+  const THRESHOLD=64,MAX_PULL=96;
+  let startY=0,pulling=false,dragging=false,refreshing=false,dist=0;
+
+  const activePage=()=>document.querySelector('.page.active');
+
+  function paint(animate){
+    indicator.style.transition=animate?'transform .25s ease, opacity .2s ease':'none';
+    const p=Math.min(1,dist/THRESHOLD);
+    const y=-34+p*50;
+    indicator.style.transform=`translate(-50%, ${y}px) scale(${(0.55+p*0.45).toFixed(2)}) rotate(${Math.round(p*180)}deg)`;
+    indicator.style.opacity=String(Math.min(1,p*1.3));
+    indicator.classList.toggle('armed',dist>=THRESHOLD);
   }
-  const target=e.state?.financeTab;
-  if(target){
-    const item=document.querySelector(`.nav-item[data-target="${target}"]`);
-    if(item){internal=true;item.click();internal=false}
+  function reset(){dist=0;paint(true)}
+  function doRefresh(){
+    refreshing=true;
+    indicator.classList.add('loading');
+    indicator.style.transition='transform .2s ease, opacity .2s ease';
+    indicator.style.transform='translate(-50%, 10px) scale(1) rotate(0deg)';
+    indicator.style.opacity='1';
+    const page=activePage(),name=page?.dataset.page;
+    if(name==='dashboard')window.financeRefreshHome?.();
+    else if(name==='calendar')window.dispatchEvent(new Event('finance-events-updated'));
+    setTimeout(()=>{
+      refreshing=false;
+      indicator.classList.remove('loading','armed');
+      reset();
+    },700);
   }
-});})();
+
+  viewport.addEventListener('touchstart',e=>{
+    if(refreshing||e.touches.length!==1)return;
+    const page=activePage();
+    pulling=!!page&&page.scrollTop<=0;
+    dragging=false;
+    startY=e.touches[0].clientY;
+  },{passive:true});
+
+  viewport.addEventListener('touchmove',e=>{
+    if(!pulling||refreshing)return;
+    const page=activePage();
+    if(!page||page.scrollTop>0){pulling=false;if(dragging)reset();return}
+    const dy=e.touches[0].clientY-startY;
+    if(dy<=0){if(dragging)reset();dragging=false;return}
+    dragging=true;
+    e.preventDefault();
+    dist=Math.min(MAX_PULL,dy*0.55);
+    paint(false);
+  },{passive:false});
+
+  function finish(){
+    if(!pulling)return;
+    pulling=false;
+    if(!dragging)return;
+    dragging=false;
+    if(dist>=THRESHOLD)doRefresh();else reset();
+  }
+  viewport.addEventListener('touchend',finish);
+  viewport.addEventListener('touchcancel',finish);
+})();
