@@ -1015,7 +1015,8 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function money(n){if(numberMode==='million'){const m=(Number(n)||0)/1e6;return `${m.toFixed(m>=100?0:1).replace(/\.0$/,'')}M`}return `${fmt(n)} تومان`}
   function masked(text='') { return privacy?'••••••':text }
   function renderSummary(){const t=totalPortfolio(),usd=Number(market.USD?.price)||0,gold=Number(market.GOLD18?.price)||0;$('fmTotalToman').textContent=masked(money(t));$('fmTotalDollar').textContent=masked(usd?`${fmt(t/usd)} $`:'—');$('fmTotalGold').textContent=masked(gold?`${fmt(t/gold)} گرم`:'—');const p=periodPnl(pnlPeriod),base=pnlPeriod==='cumulative'?totalCost():(priorSnapshot(pnlPeriod==='daily'?1:30)?.v??t);$('fmPnlValue').textContent=masked(`${p>=0?'+':''}${money(Math.abs(p))}`);$('fmPnlValue').className=p>=0?'fm-up':'fm-down';$('fmPnlRate').textContent=masked(`${p>=0?'▲':'▼'} ${Math.abs(percent(p,base)).toFixed(2)}٪`);$('fmPnlRate').className=p>=0?'fm-up':'fm-down';$('fmPrivacyToggle').innerHTML=privacy?'<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 10.6a2.7 2.7 0 003.8 3.8M9.9 5.2A9.8 9.8 0 0112 6c6.1 0 9.8 6 9.8 6a15.7 15.7 0 01-3.2 3.7M6.4 6.4C3.8 8.2 2.2 12 2.2 12s3.7 6 9.8 6c.7 0 1.4-.1 2-.2"/></svg>':'<svg viewBox="0 0 24 24"><path d="M2.2 12s3.7-6 9.8-6 9.8 6 9.8 6-3.7 6-9.8 6-9.8-6-9.8-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>'}
-  function renderMarket(){const track=$('fmMarketTrack');const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({name:x.name,key:x.key,keyword:x.keyword,category:x.category,enabled:true}))).filter(x=>x.enabled!==false);const set=()=>`<div class="fm-market-set">${defs.map(x=>{const v=market[x.key]||{},p=Number(v.price)||0,ch=Number(v.change)||0;return `<article class="fm-market-card"><div class="fm-market-name"><b>${esc(x.name)}</b><span>${esc(x.key)}</span></div><div class="fm-market-price ${ch>0?'fm-up':ch<0?'fm-down':'fm-neutral'}">${p?fmt(p):'—'} <span>(${ch>0?'+':''}${ch?ch.toFixed(2):'۰'}٪)</span></div></article>`}).join('')}</div>`;track.innerHTML=set()+set()}
+  const fmtUsd=n=>{n=Number(n)||0;const d=n>=1000?0:n>=1?2:n>=0.01?4:6;return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:d})};
+  function renderMarket(){const track=$('fmMarketTrack');const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({name:x.name,key:x.key,keyword:x.keyword,category:x.category,enabled:true}))).filter(x=>x.enabled!==false);const set=()=>`<div class="fm-market-set">${defs.map(x=>{const v=market[x.key]||{},p=Number(v.price)||0,ch=Number(v.change)||0;const isCr=x.category==='رمزارزها'&&norm(x.key)!=='usdt'&&norm(x.keyword)!=='usdt';let usd=Number(v.usd)||0;if(isCr&&!usd&&p){const tr=Number(market.USDT?.price)||0;if(tr>0)usd=p/tr}const priceTxt=isCr&&usd>0?`<bdi dir="ltr">$${fmtUsd(usd)}</bdi>`:(p?fmt(p):'—');return `<article class="fm-market-card"><div class="fm-market-name"><b>${esc(x.name)}</b><span>${esc(x.key)}</span></div><div class="fm-market-price ${ch>0?'fm-up':ch<0?'fm-down':'fm-neutral'}">${priceTxt} <span>(${ch>0?'+':''}${ch?ch.toFixed(2):'۰'}٪)</span></div></article>`}).join('')}</div>`;track.innerHTML=set()+set()}
   function renderFilters(){$('fmCategoryFilter').innerHTML='<option value="all">همه دسته‌ها</option>'+categories.map(c=>`<option value="${esc(c.id)}">${esc(c.icon)} ${esc(c.name)}</option>`).join('')}
   function filteredAssets(){const q=norm($('fmAssetSearch').value),cf=$('fmCategoryFilter').value,sf=$('fmSourceFilter').value;let a=portfolioAssets().filter(x=>((x.isVehicle||totalAsset(x)>0||((x.priceMode||'manual')==='api'&&Number(x.quantity)>0)))&&(!q||norm(`${x.name} ${x.keyword} ${cat(x.category).name}`).includes(q))&&(cf==='all'||String(x.category)===cf)&&(sf==='all'||(x.priceMode||'manual')===sf));a.sort((x,y)=>assetSort==='value-asc'?totalAsset(x)-totalAsset(y):assetSort==='name'?String(x.name).localeCompare(String(y.name),'fa'):assetSort==='category'?cat(x.category).name.localeCompare(cat(y.category).name,'fa'):totalAsset(y)-totalAsset(x));return a}
   function renderAssets(){const list=$('fmAssetsList'),donut=$('fmDonutView'),visible=filteredAssets(),by={};visible.forEach(a=>(by[a.category]??=[]).push(a));const allBy={};portfolioAssets().forEach(a=>(allBy[a.category]??=[]).push(a));const fullGrand=totalPortfolio();const groups=Object.entries(by).map(([id,arr])=>({c:cat(id),arr,total:arr.reduce((s,a)=>s+totalAsset(a),0),fullTotal:(allBy[id]||[]).reduce((s,a)=>s+totalAsset(a),0)})).sort((a,b)=>b.total-a.total);list.innerHTML=groups.length?groups.map(g=>`<section class="fm-category"><div class="fm-category-head" style="--fm-cat:${g.c.color}"><div class="fm-category-name">${esc(g.c.icon)} ${esc(g.c.name)} <span>(${fullGrand?(g.fullTotal/fullGrand*100).toFixed(1):'0'}٪)</span></div><div class="fm-category-total">${money(g.total)}</div></div><div class="fm-category-assets">${g.arr.map(a=>{const share=g.fullTotal?totalAsset(a)/g.fullTotal*100:0;return assetCard(a,share)}).join('')}</div></section>`).join(''):'<div class="fm-history-placeholder">هنوز دارایی‌ای ثبت نشده است. از «افزودن دارایی» شروع کن.</div>';if(assetsView==='donut'){list.hidden=true;donut.hidden=false;renderDonut(fullGrand)}else{list.hidden=false;donut.hidden=true}bindSwipes()}
@@ -1190,17 +1191,32 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     });
     return out;
   }
+  // Common crypto names, so a short symbol like ETH is matched by its exact
+  // symbol / full name and never by a loose substring (e.g. "Tether" contains "eth").
+  const CRYPTO_ALIASES={BTC:['bitcoin','بیتکوین'],ETH:['ethereum','اتریوم'],SOL:['solana','سولانا'],XRP:['ripple','ریپل'],BNB:['binancecoin','بایننسکوین'],USDC:['usdcoin'],DOGE:['dogecoin','دوجکوین'],ADA:['cardano','کاردانو'],TRX:['tron','ترون'],LINK:['chainlink','چینلینک'],AVAX:['avalanche','آوالانچ'],XLM:['stellar','استلار'],SHIB:['shibainu','شیباینو'],DOT:['polkadot','پولکادات'],LTC:['litecoin','لایتکوین'],UNI:['uniswap','یونیسواپ'],FIL:['filecoin','فایلکوین'],ATOM:['cosmos','کازماس']};
+  const isTetherLike=s=>/usdt|tether|تتر/.test(norm(s));
   function findBrsInstrument(data,instrument){
     const items=flattenBrsItems(data), kws=[instrument?.symbol].concat(instrument?.keywords||[]).map(norm).filter(Boolean);
+    const cryptoMode=!!instrument?.crypto;
+    const wantsTether=kws.some(isTetherLike);
+    let aliasKws=[];
+    if(cryptoMode){kws.forEach(k=>{const a=CRYPTO_ALIASES[k.toUpperCase()];if(a)aliasKws=aliasKws.concat(a.map(norm))})}
     let best=null,bestScore=-1;
     for(const item of items){
       const sym=norm(item.symbol),name=norm(item.name),en=norm(item.name_en),hay=norm([item.symbol,item.name,item.name_en,item.__category,item.__path].join(' '));
+      // A crypto other than Tether must never resolve to the Tether row.
+      if(cryptoMode&&!wantsTether&&(sym.startsWith('usdt')||/tether/.test(en)||name.includes('تتر')))continue;
       let score=-1;
       for(const kw of kws){
         if(sym===kw)score=Math.max(score,120);
         else if(name===kw||en===kw)score=Math.max(score,100);
+        else if(cryptoMode){
+          if(sym.startsWith(kw)&&['usdt','usd','irt','irr','toman'].includes(sym.slice(kw.length)))score=Math.max(score,90);
+          else if(kw.length>=6&&hay.includes(kw))score=Math.max(score,60);
+        }
         else if(hay.includes(kw))score=Math.max(score,60);
       }
+      if(cryptoMode){for(const al of aliasKws){if(name===al||en===al)score=Math.max(score,100)}}
       const raw=instrument?.id==='bourse'?(item.index??item.price):item.price;
       const price=brsNumber(raw);
       if(score>bestScore&&Number.isFinite(price)&&price>0)best={item,price,score};
@@ -1224,11 +1240,11 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function findBrsQuote(data,keyword,isCrypto){
     if(!data||!keyword)return null;
     const k=norm(keyword);
-    if(k==='usdt'||k==='تتر'||k==='usdt irt'){
+    if(k==='usdt'||k==='تتر'||k==='usdtirt'){
       const f=findBrsInstrument(data,{symbol:'USDT_IRT',keywords:['USDT_IRT','دلار تتر']});
       return f?{toman:f.price,usd:null,item:f.item}:null;
     }
-    const f=findBrsInstrument(data,{symbol:String(keyword).trim().toUpperCase(),keywords:[keyword]});
+    const f=findBrsInstrument(data,{symbol:String(keyword).trim().toUpperCase(),keywords:[keyword],crypto:!!isCrypto});
     if(!f)return null;
     const item=f.item,unit=norm(item.unit);
     let toman=f.price,usd=null;
@@ -1245,22 +1261,26 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
         toman=rate>0?toman*rate:0;
       }
     }
+    // Crypto quoted in Toman/Rial by the API: derive the dollar (Tether) price for the ticker.
+    if(isCrypto&&usd==null&&toman>0){
+      const r=getBrsUsdtRate(data)||getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0;
+      if(r>0)usd=toman/r;
+    }
     return {toman,usd,item};
   }
+  const isCryptoKeyword=kw=>{
+    const n=norm(kw);if(!n)return false;
+    return (settings.marketDefs?.length?settings.marketDefs:marketDefs).some(d=>d.category==='رمزارزها'&&(norm(d.keyword)===n||norm(d.key)===n));
+  };
   function updateTickerFromBrsData(data){
-    const rate=getBrsUsdRate(data)||Number(settings.usdToTomanRate)||0;
-    const usdtRate=getBrsUsdtRate(data)||rate;
     const tickerDefs=settings.marketDefs?.length?settings.marketDefs:marketDefs;
     tickerDefs.forEach(t=>{
-      const f=findBrsInstrument(data,{symbol:t.keyword||t.key,keywords:[t.keyword,t.name]});
-      if(!f)return;
-      const isCrypto=t.category==='رمزارزها';
-      const unit=norm(f.item.unit),raw=f.price;let toman=raw,usdVal=null;
-      const pt=brsNumber(f.item.price_toman);
-      if(Number.isFinite(pt)&&pt>0&&f.item.price_toman!==undefined){toman=pt;usdVal=brsNumber(f.item.price);}
-      else if(unit==='دلار'){usdVal=raw;const r=isCrypto?usdtRate:rate;toman=r>0?raw*r:0;}
-      else if(unit==='ریال')toman=raw/10;
-      if(toman>0)market[t.key]={price:toman,change:brsNumber(f.item.change_percent)??0};
+      const q=findBrsQuote(data,t.keyword||t.key||t.name,t.category==='رمزارزها');
+      if(q&&q.toman>0){
+        const entry={price:q.toman,change:brsNumber(q.item.change_percent)??0};
+        if(t.category==='رمزارزها'&&q.usd>0)entry.usd=q.usd;
+        market[t.key]=entry;
+      }
     });
   }
   async function fetchBrsApiData(){
@@ -1282,10 +1302,10 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       let count=0;
       for(const d of defs){
         const q=findBrsQuote(data,d.keyword||d.key||d.name,d.category==='رمزارزها');
-        if(q&&q.toman>0){market[d.key]={price:q.toman,change:brsNumber(q.item.change_percent)??0};count++;}
+        if(q&&q.toman>0){const entry={price:q.toman,change:brsNumber(q.item.change_percent)??0};if(d.category==='رمزارزها'&&q.usd>0)entry.usd=q.usd;market[d.key]=entry;count++;}
       }
       for(const a of assets.filter(x=>(x.priceMode||'manual')==='api'&&(x.keyword||x.name))){
-        const q=findBrsQuote(data,a.keyword||a.name,a.category==='crypto');
+        const q=findBrsQuote(data,a.keyword||a.name,a.category==='crypto'||isCryptoKeyword(a.keyword||a.name));
         if(q&&q.toman>0){a.currentPrice=Math.round(q.toman);if(q.usd!=null)a.apiUsdPrice=q.usd;else delete a.apiUsdPrice;}
       }
       updateTickerFromBrsData(data);
