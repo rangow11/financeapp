@@ -925,9 +925,9 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   const mergedMarketDefs=marketDefs.map(base=>{const saved=savedDefs.find(x=>String(x.key)===String(base.key));if(!saved)return {...base};return firstApiKeywordMigration?{...base,name:saved.name||base.name,key:saved.key||base.key,enabled:saved.enabled!==false,category:base.category}:{...base,...saved,category:saved.category||base.category}});
   const savedCustomMarketDefs=savedDefs.filter(x=>!marketDefs.some(b=>String(b.key)===String(x.key))).map(x=>({...x,category:x.category||'سفارشی'}));
   if(firstApiKeywordMigration || !savedDefs.length || savedDefs.length!==mergedMarketDefs.length+savedCustomMarketDefs.length){settings.marketDefs=[...mergedMarketDefs,...savedCustomMarketDefs];settings.marketDefsVersion=2;write(SET,settings)}
-  const ui=Object.assign({numberMode:'exact',assetsView:'list',assetSort:'value-desc',pnlPeriod:'daily',chartUnit:'toman',privacy:false,searchToolsCollapsed:false,chartCollapsed:false},settings.ui||{});
-  let numberMode=ui.numberMode,assetsView=ui.assetsView,assetSort=ui.assetSort,pnlPeriod=ui.pnlPeriod,chartUnit=ui.chartUnit,privacy=!!ui.privacy,timer=null,swipeState={};
-  function saveUi(){settings.ui={...(settings.ui||{}),numberMode,assetsView,assetSort,pnlPeriod,chartUnit,privacy};write(SET,settings)}
+  const ui=Object.assign({numberMode:'exact',assetsView:'list',assetSort:'value-desc',pnlPeriod:'daily',chartUnit:'toman',privacy:false,searchToolsCollapsed:false,chartCollapsed:false,chartMode:'value',chartRange:'30'},settings.ui||{});
+  let numberMode=ui.numberMode,assetsView=ui.assetsView,assetSort=ui.assetSort,pnlPeriod=ui.pnlPeriod,chartUnit=ui.chartUnit,chartMode=ui.chartMode==='pnl'?'pnl':'value',chartRange=['7','30','90','365','all'].includes(String(ui.chartRange))?String(ui.chartRange):'30',privacy=!!ui.privacy,timer=null,swipeState={};
+  function saveUi(){settings.ui={...(settings.ui||{}),numberMode,assetsView,assetSort,pnlPeriod,chartUnit,chartMode,chartRange,privacy};write(SET,settings)}
   function applyDashboardUi(){
     const tools=$('fmDashboardTools'),chart=$('fmChartCard');
     if(tools)tools.classList.toggle('is-collapsed',!!settings.ui?.searchToolsCollapsed);
@@ -937,8 +937,8 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     if(chartBtn)chartBtn.setAttribute('aria-label',settings.ui?.chartCollapsed?'نمایش نمودار':'مخفی کردن نمودار');
   }
   function syncDashboardSelections(){
-    const groups=[['fmNumberTabs','numberMode'],['fmViewTabs','assetsView'],['fmPnlTabs','pnlPeriod'],['fmChartTabs','chartUnit']];
-    groups.forEach(([id,key])=>{const root=$(id);if(!root)return;root.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset[key]===({'numberMode':numberMode,'assetsView':assetsView,'pnlPeriod':pnlPeriod,'chartUnit':chartUnit}[key])))});
+    const groups=[['fmNumberTabs','numberMode'],['fmViewTabs','assetsView'],['fmPnlTabs','pnlPeriod'],['fmChartTabs','chartUnit'],['fmChartModeTabs','chartMode'],['fmChartRangeTabs','chartRange']];
+    groups.forEach(([id,key])=>{const root=$(id);if(!root)return;root.querySelectorAll('button').forEach(b=>b.classList.toggle('active',b.dataset[key]===({'numberMode':numberMode,'assetsView':assetsView,'pnlPeriod':pnlPeriod,'chartUnit':chartUnit,'chartMode':chartMode,'chartRange':chartRange}[key])))});
   }
   const fmt=n=>new Intl.NumberFormat('fa-IR',{maximumFractionDigits:2}).format(Number(n)||0);
   const norm=s=>String(s??'').toLowerCase().replace(/[۰-۹]/g,d=>String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/[٠-٩]/g,d=>String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[\s_\-ـ]/g,'').trim();
@@ -1020,7 +1020,21 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     write(STORE,assets);
     return p;
   }
-  function snapshot(){const now=Date.now(),v=totalPortfolio();snapshots=snapshots.filter(x=>Number(x.t)>1e12&&now-x.t<370*864e5);snapshots.push({t:now,v,usd:Number(market.USD?.price)||0,gold:Number(market.GOLD18?.price)||0});write(SNAP,snapshots.slice(-500));return v}
+  const dayKey=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
+  // One record per calendar day (updated in place on every price refresh, so the
+  // day's last value wins): t = last update time, d = day, v = total value,
+  // p = total profit/loss (realized + unrealized), c = cost basis, usd / gold = that day's rates.
+  function snapshot(){
+    const now=Date.now(),v=totalPortfolio(),p=pnl(),cost=totalCost(),day=dayKey(now);
+    snapshots=snapshots.filter(x=>Number(x.t)>1e12&&now-x.t<370*864e5);
+    if(Number.isFinite(v)&&(v>0||cost>0)){
+      const rec={t:now,d:day,v,p:Number.isFinite(p)?p:0,c:cost,usd:Number(market.USD?.price)||0,gold:Number(market.GOLD18?.price)||0};
+      const i=snapshots.findIndex(x=>(x.d||dayKey(x.t))===day);
+      if(i>=0)snapshots[i]=rec;else snapshots.push(rec);
+      snapshots.sort((a,b)=>a.t-b.t);
+    }
+    write(SNAP,snapshots.slice(-400));return v;
+  }
   function priorSnapshot(days){const target=Date.now()-days*864e5;let best=null,d=Infinity;snapshots.forEach(x=>{const dd=Math.abs(x.t-target);if(dd<d){d=dd;best=x}});return best}
   function periodPnl(period){const cur=totalPortfolio();if(period==='cumulative')return pnl();const s=priorSnapshot(period==='daily'?1:30);return cur-(s?.v??cur)}
   function percent(v,b){return b?100*v/b:0}
@@ -1052,7 +1066,145 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     $('fmDonutView').innerHTML=`<div class="fm-donut-main">${build(groups,grand,'کل پرتفوی')}</div><div id="fmCategoryDonutDetails"></div>`;
     $('fmDonutView').querySelectorAll('[data-donut-cat]').forEach(btn=>btn.onclick=()=>{const g=groups.find(x=>String(x.id)===String(btn.dataset.donutCat));if(!g)return;const el=$('fmCategoryDonutDetails');const total=g.total;el.innerHTML=build(g.arr.map(a=>({id:a.id,c:{name:a.name,icon:a.icon||'◌',color:palette[g.arr.indexOf(a)%palette.length]},total:totalAsset(a)})),total,`دارایی‌های ${g.c.name}`);el.classList.remove('fm-donut-detail-in');requestAnimationFrame(()=>el.classList.add('fm-donut-detail-in'));el.querySelectorAll('[data-donut-cat]').forEach(x=>x.disabled=true)})
   }
-  function renderChart(){const canvas=$('fmGrowthChart'),empty=$('fmChartEmpty');if(!canvas)return;const ctx=canvas.getContext('2d'),r=canvas.getBoundingClientRect(),d=devicePixelRatio||1;canvas.width=Math.max(1,r.width*d);canvas.height=Math.max(1,r.height*d);ctx.setTransform(d,0,0,d,0,0);ctx.clearRect(0,0,r.width,r.height);let data=snapshots.slice(-30).map(x=>{let v=x.v;if(chartUnit==='dollar'&&x.usd)v=v/x.usd;if(chartUnit==='gold'&&x.gold)v=v/x.gold;return {...x,v}}).filter(x=>Number.isFinite(x.v));if(data.length<2){empty.hidden=false;return}empty.hidden=true;const vals=data.map(x=>x.v),max=Math.max(...vals),min=Math.min(...vals),pad=18,w=r.width,h=r.height,range=Math.max(1,max-min),accent=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();ctx.beginPath();data.forEach((x,i)=>{const px=pad+i*(w-pad*2)/Math.max(1,data.length-1),py=max===min?h/2:h-pad-((x.v-min)/range)*(h-pad*2);i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.lineWidth=2;ctx.strokeStyle=accent;ctx.stroke();ctx.lineTo(w-pad,h-pad);ctx.lineTo(pad,h-pad);ctx.closePath();ctx.globalAlpha=.08;ctx.fillStyle=accent;ctx.fill();ctx.globalAlpha=1;ctx.beginPath();data.forEach((x,i)=>{const px=pad+i*(w-pad*2)/Math.max(1,data.length-1),py=max===min?h/2:h-pad-((x.v-min)/range)*(h-pad*2);i?ctx.lineTo(px,py):ctx.moveTo(px,py)});ctx.strokeStyle=accent;ctx.stroke()}
+  // ===== Portfolio trend chart (one point per day) =====
+  const CHART_MONTHS=['فروردین','اردیبهشت','خرداد','تیر','مرداد','شهریور','مهر','آبان','آذر','دی','بهمن','اسفند'];
+  const CHART_RANGE_LABEL={'7':'۷ روز اخیر','30':'۳۰ روز اخیر','90':'۹۰ روز اخیر','365':'یک سال اخیر','all':'کل دوره'};
+  let chartPts=[],chartHover=null,chartLayout=null,chartTipTimer=null;
+  const faNum=v=>String(v).replace(/\d/g,d=>'۰۱۲۳۴۵۶۷۸۹'[d]).replace('.','٫');
+  const chartDate=(ts,withYear)=>{const j=(gDateToJ(dayKey(ts))||'').split('-').map(Number);if(j.length<3||!j[1])return '';return withYear?`${CHART_MONTHS[j[1]-1]} ${faNum(j[0])}`:`${faNum(j[2])} ${CHART_MONTHS[j[1]-1]}`};
+  const chartRgba=(hex,a)=>{const m=String(hex||'').trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);let h=m?m[1]:'43a9ff';if(h.length===3)h=h.split('').map(x=>x+x).join('');const n=parseInt(h,16);return `rgba(${n>>16&255},${n>>8&255},${n&255},${a})`};
+  const chartFmt=(v,signed)=>{const a=Math.abs(v),sign=v<0?'−':(signed&&v>0?'+':'');const t=chartUnit==='dollar'?`${fmt(a)} $`:chartUnit==='gold'?`${fmt(a)} گرم`:money(a);return masked(sign+t)};
+  const chartAxis=v=>{const a=Math.abs(v),s=v<0?'−':'',th=chartUnit==='toman'?1e3:1e4;if(a>=1e9)return s+faNum(+(a/1e9).toFixed(1))+' میلیارد';if(a>=1e6)return s+faNum(+(a/1e6).toFixed(1))+' میلیون';if(a>=th)return s+faNum(+(a/1e3).toFixed(0))+' هزار';return s+faNum(+a.toFixed(a>=100?0:2))};
+  function chartNiceTicks(min,max,n){const span=(max-min)||1,raw=span/n,pow=Math.pow(10,Math.floor(Math.log10(raw))),f=raw/pow,step=(f<=1?1:f<=2?2:f<=2.5?2.5:f<=5?5:10)*pow,out=[];for(let v=Math.ceil(min/step)*step;v<=max+step*1e-6;v+=step)out.push(+v.toFixed(10));return out}
+  // Convert a stored toman amount to the selected display unit using THAT day's rate.
+  function chartConv(x,base){if(typeof base!=='number'||!Number.isFinite(base))return NaN;if(chartUnit==='dollar')return x.usd>0?base/x.usd:NaN;if(chartUnit==='gold')return x.gold>0?base/x.gold:NaN;return base}
+  function chartDays(){const set=new Set();snapshots.forEach(x=>{if(Number(x.t)>1e12)set.add(x.d||dayKey(x.t))});return set.size}
+  function chartSeries(){
+    const byDay=new Map();
+    snapshots.forEach(x=>{const t=Number(x.t);if(!(t>1e12))return;const d=x.d||dayKey(t),old=byDay.get(d);if(!old||t>=old.t)byDay.set(d,{...x,t,d})});
+    let rows=[...byDay.values()].sort((a,b)=>a.t-b.t);
+    if(chartRange!=='all'){const from=dayKey(Date.now()-Number(chartRange)*864e5);rows=rows.filter(x=>x.d>=from)}
+    const out=[];
+    rows.forEach(x=>{const v=chartConv(x,chartMode==='pnl'?x.p:x.v);if(Number.isFinite(v))out.push({t:x.t,d:x.d,v,raw:x})});
+    return out;
+  }
+  function renderChartStats(){
+    const box=$('fmChartStats'),empty=$('fmChartEmpty'),foot=$('fmChartFoot');if(!box||!empty||!foot)return;
+    const pts=chartPts;
+    if(pts.length<2){
+      const days=chartDays();
+      empty.textContent=!days?'هنوز داده‌ای ثبت نشده است. ارزش دارایی‌ها هر روز به‌صورت خودکار ثبت می‌شود.':days<2?'نمودار از دومین روز ثبت شروع می‌شود. ارزش دارایی‌ها هر روز به‌صورت خودکار ثبت می‌شود.':'در این بازه هنوز دو روز داده ثبت نشده است؛ بازه‌ی بزرگ‌تری انتخاب کن.';
+      empty.hidden=false;box.hidden=true;box.innerHTML='';foot.textContent=days?`${faNum(days)} روز ثبت‌شده`:'';return;
+    }
+    empty.hidden=true;box.hidden=false;
+    const first=pts[0],last=pts[pts.length-1],change=last.v-first.v,cls=x=>x>0?'fm-up':x<0?'fm-down':'';
+    let cells;
+    if(chartMode==='pnl'){
+      const p=last.raw.p,cost=last.raw.c,ret=cost>0&&typeof p==='number'?p/cost*100:null;
+      cells=[['سود و زیان فعلی',chartFmt(last.v,true),cls(last.v),''],[`تغییر ${CHART_RANGE_LABEL[chartRange]}`,chartFmt(change,true),cls(change),''],['بازده کل',ret===null?'—':`${ret>0?'+':ret<0?'−':''}${faNum(Math.abs(ret).toFixed(2))}٪`,cls(ret||0),'']];
+    }else{
+      const hi=Math.max(...pts.map(x=>x.v)),pc=first.v>0?change/first.v*100:null;
+      cells=[['ارزش فعلی',chartFmt(last.v),'',''],[`تغییر ${CHART_RANGE_LABEL[chartRange]}`,chartFmt(change,true),cls(change),pc===null?'':`${pc>0?'▲':pc<0?'▼':''} ${faNum(Math.abs(pc).toFixed(2))}٪`],['بیشترین ارزش',chartFmt(hi),'','']];
+    }
+    box.innerHTML=cells.map(([l,v,k,sub])=>`<div class="fm-chart-stat"><span>${l}</span><b class="${k}">${v}</b>${sub?`<small class="${k}">${sub}</small>`:''}</div>`).join('');
+    const note=chartMode==='pnl'?'سود و زیان = ارزش فعلی منهای هزینه خرید (شامل سود فروش‌های انجام‌شده).':'ارزش کل با خرید و فروش هم تغییر می‌کند؛ برای رشد واقعی «سود و زیان» را ببین.';
+    foot.textContent=`${faNum(pts.length)} روز ثبت‌شده · ${chartDate(first.t)} تا ${chartDate(last.t)}${chartUnit!=='toman'?' · با نرخ همان روز':''} — ${note}`;
+  }
+  function chartHideTip(){const tip=$('fmChartTip');if(tip)tip.hidden=true}
+  function chartShowTip(i){
+    const tip=$('fmChartTip'),wrap=tip?.parentElement,pt=chartPts[i];if(!tip||!wrap||!pt||!chartLayout)return;
+    const other=chartConv(pt.raw,chartMode==='pnl'?pt.raw.v:pt.raw.p),otherLabel=chartMode==='pnl'?'ارزش کل':'سود و زیان';
+    tip.innerHTML=`<b>${chartDate(pt.t)} ${faNum((gDateToJ(dayKey(pt.t))||'').split('-')[0])}</b><span>${chartMode==='pnl'?'سود و زیان':'ارزش کل'}: ${chartFmt(pt.v,chartMode==='pnl')}</span>${Number.isFinite(other)?`<small>${otherLabel}: ${chartFmt(other,chartMode!=='pnl')}</small>`:''}`;
+    tip.hidden=false;
+    const x=chartLayout.X(pt.t),tw=tip.offsetWidth,ww=wrap.clientWidth;
+    tip.style.left=Math.max(4,Math.min(ww-tw-4,x-tw/2))+'px';
+  }
+  function drawChart(){
+    const canvas=$('fmGrowthChart');if(!canvas)return;
+    const r=canvas.getBoundingClientRect();if(r.width<10||r.height<10)return;
+    const dpr=window.devicePixelRatio||1,ctx=canvas.getContext('2d');
+    canvas.width=Math.round(r.width*dpr);canvas.height=Math.round(r.height*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,r.width,r.height);
+    const pts=chartPts;chartLayout=null;if(pts.length<2)return;
+    const cs=getComputedStyle(document.documentElement),accent=cs.getPropertyValue('--accent').trim()||'#43a9ff',muted=cs.getPropertyValue('--muted').trim()||'#8195a9',surface=cs.getPropertyValue('--surface').trim()||'#0c1d31';
+    const UP='#22b983',DOWN='#ef5b68',pnlMode=chartMode==='pnl';
+    const w=r.width,h=r.height,padL=6,padR=6,padT=14,padB=22,pw=w-padL-padR,ph=h-padT-padB;
+    const vals=pts.map(x=>x.v);let vmin=Math.min(...vals),vmax=Math.max(...vals);
+    if(pnlMode){vmin=Math.min(vmin,0);vmax=Math.max(vmax,0)}
+    if(vmin===vmax){const d=Math.abs(vmax)*.05||1;vmin-=d;vmax+=d}
+    const m=(vmax-vmin)*.12;const lo0=vmin;vmin-=m;vmax+=m;if(!pnlMode&&lo0>=0&&vmin<0)vmin=0;
+    const tmin=pts[0].t,tmax=pts[pts.length-1].t,span=Math.max(1,tmax-tmin);
+    const X=t=>padL+(t-tmin)/span*pw,Y=v=>padT+(vmax-v)/(vmax-vmin)*ph;
+    chartLayout={X,Y,padL,padT,pw,ph,w,h};
+    ctx.direction='rtl';ctx.font='9px Vazirmatn, sans-serif';ctx.textBaseline='alphabetic';
+    // grid + y labels
+    ctx.lineWidth=1;
+    chartNiceTicks(vmin,vmax,3).forEach(v=>{
+      const y=Math.round(Y(v))+.5;
+      ctx.globalAlpha=.16;ctx.strokeStyle=muted;ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(w-padR,y);ctx.stroke();
+      if(!privacy){ctx.globalAlpha=.85;ctx.fillStyle=muted;ctx.textAlign='left';ctx.fillText(chartAxis(v),padL+2,y-3)}
+    });
+    ctx.globalAlpha=1;
+    // zero line (profit / loss)
+    let y0=null;
+    if(pnlMode){y0=Y(0);ctx.setLineDash([4,3]);ctx.globalAlpha=.55;ctx.strokeStyle=muted;ctx.beginPath();ctx.moveTo(padL,y0);ctx.lineTo(w-padR,y0);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1}
+    const line=()=>{ctx.beginPath();pts.forEach((p,i)=>{const px=X(p.t),py=Y(p.v);i?ctx.lineTo(px,py):ctx.moveTo(px,py)})};
+    const area=base=>{line();ctx.lineTo(X(tmax),base);ctx.lineTo(X(tmin),base);ctx.closePath()};
+    ctx.lineJoin='round';ctx.lineCap='round';ctx.lineWidth=2.2;
+    if(pnlMode){
+      [[true,UP],[false,DOWN]].forEach(([pos,col])=>{
+        ctx.save();ctx.beginPath();ctx.rect(0,pos?0:y0,w,pos?y0:h-y0);ctx.clip();
+        const g=ctx.createLinearGradient(0,pos?padT:h-padB,0,y0);g.addColorStop(0,chartRgba(col,.30));g.addColorStop(1,chartRgba(col,.02));
+        area(y0);ctx.fillStyle=g;ctx.fill();
+        line();ctx.strokeStyle=col;ctx.stroke();ctx.restore();
+      });
+    }else{
+      const base=padT+ph,g=ctx.createLinearGradient(0,padT,0,base);g.addColorStop(0,chartRgba(accent,.30));g.addColorStop(1,chartRgba(accent,.02));
+      area(base);ctx.fillStyle=g;ctx.fill();
+      line();ctx.strokeStyle=accent;ctx.stroke();
+    }
+    // points
+    const colorOf=v=>pnlMode?(v>=0?UP:DOWN):accent;
+    const dots=pts.length<=45?pts:[pts[pts.length-1]];
+    dots.forEach(p=>{ctx.beginPath();ctx.arc(X(p.t),Y(p.v),2.6,0,7);ctx.fillStyle=surface;ctx.fill();ctx.lineWidth=1.6;ctx.strokeStyle=colorOf(p.v);ctx.stroke()});
+    const lp=pts[pts.length-1];ctx.beginPath();ctx.arc(X(lp.t),Y(lp.v),4.2,0,7);ctx.fillStyle=colorOf(lp.v);ctx.fill();
+    // x labels
+    const k=w<340?3:4,seen=new Set(),wide=(tmax-tmin)>270*864e5;ctx.fillStyle=muted;ctx.globalAlpha=.9;
+    for(let i=0;i<k;i++){
+      const t=tmin+span*i/(k-1),lab=chartDate(t,wide);if(!lab||seen.has(lab))continue;seen.add(lab);
+      ctx.textAlign=i===0?'left':i===k-1?'right':'center';
+      ctx.fillText(lab,i===0?padL:i===k-1?w-padR:padL+pw*i/(k-1),h-6);
+    }
+    ctx.globalAlpha=1;
+    // hover crosshair
+    if(chartHover!==null&&pts[chartHover]){
+      const p=pts[chartHover],px=X(p.t),py=Y(p.v);
+      ctx.setLineDash([3,3]);ctx.globalAlpha=.6;ctx.strokeStyle=muted;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(px,padT-4);ctx.lineTo(px,h-padB);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+      ctx.beginPath();ctx.arc(px,py,5,0,7);ctx.fillStyle=colorOf(p.v);ctx.fill();ctx.lineWidth=2;ctx.strokeStyle=surface;ctx.stroke();
+    }
+  }
+  function renderChart(){
+    if(!$('fmGrowthChart'))return;
+    chartPts=chartSeries();chartHover=null;chartHideTip();
+    renderChartStats();drawChart();
+  }
+  function bindChart(){
+    const canvas=$('fmGrowthChart');if(!canvas||canvas.dataset.bound)return;canvas.dataset.bound='1';
+    const pick=e=>{
+      if(!chartLayout||chartPts.length<2)return;
+      const r=canvas.getBoundingClientRect(),t=chartPts[0].t+Math.max(0,Math.min(1,(e.clientX-r.left-chartLayout.padL)/chartLayout.pw))*(chartPts[chartPts.length-1].t-chartPts[0].t);
+      let best=0,bd=Infinity;chartPts.forEach((p,i)=>{const d=Math.abs(p.t-t);if(d<bd){bd=d;best=i}});
+      if(best!==chartHover){chartHover=best;drawChart();chartShowTip(best)}
+    };
+    const clear=()=>{chartHover=null;chartHideTip();drawChart()};
+    canvas.addEventListener('pointerdown',e=>{clearTimeout(chartTipTimer);pick(e)});
+    canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||e.buttons||e.pointerType==='touch'||e.pointerType==='pen'){clearTimeout(chartTipTimer);pick(e)}});
+    ['pointerup','pointercancel','pointerleave'].forEach(n=>canvas.addEventListener(n,e=>{clearTimeout(chartTipTimer);chartTipTimer=setTimeout(clear,e.pointerType==='mouse'?0:1600)}));
+    // Keep chart scrubbing from being mistaken for the pull-to-refresh gesture.
+    canvas.addEventListener('touchstart',e=>e.stopPropagation(),{passive:true});
+    let rt=null;const redraw=()=>{clearTimeout(rt);rt=setTimeout(drawChart,120)};
+    window.addEventListener('resize',redraw);window.addEventListener('orientationchange',redraw);
+  }
   function render(){renderFilters();renderSummary();renderMarket();renderAssets();renderChart();syncDashboardSelections();applyDashboardUi();$('fmRefreshHours').value=settings.refreshHours??1;$('fmApiUrl').value=settings.apiUrl||'https://brsapi.ir';$('fmApiKey').value=settings.apiKey||'B5nkrcZaHTwxR29G4w2CqhqXdKeWnE5r';const last=localStorage.getItem('finance-market-updated-at');if(last)$('fmLastUpdate').textContent='آخرین بروزرسانی: '+new Date(Number(last)).toLocaleTimeString('fa-IR',{hour:'2-digit',minute:'2-digit'});}
   function ensureModal(id,title,body=''){let m=$(id);if(m)return m;m=document.createElement('div');m.id=id;m.className='fm-modal';m.innerHTML=`<div class="fm-sheet"><div class="fm-sheet-head"><div><span class="section-kicker">مدیریت پرتفوی</span><h2>${title}</h2></div><button class="fm-close" type="button">×</button></div><div class="fm-modal-body">${body}</div></div>`;document.querySelector('.app-shell').appendChild(m);m.addEventListener('click',e=>{if(e.target===m||e.target.closest('.fm-close'))m.classList.remove('open')});return m}
   function emojiPicker(current,onPick){const m=ensureModal('fmEmojiPicker','انتخاب آیکون','');m.querySelector('.fm-modal-body').innerHTML=`<label class="fm-setting-field"><span>ایموجی دلخواه گوشی</span><input id="fmEmojiCustom" maxlength="8" placeholder="مثلاً 🏆"></label><button class="fm-save-setting" id="fmEmojiUse">استفاده از این ایموجی</button><div class="fm-emoji-grid">${emojis.map(e=>`<button type="button" class="fm-emoji ${e===current?'active':''}" data-pick-emoji="${e}">${e}</button>`).join('')}</div>`;m.querySelector('#fmEmojiCustom').value=current||'';m.querySelector('#fmEmojiUse').onclick=()=>{const v=m.querySelector('#fmEmojiCustom').value.trim();if(v){onPick(v);m.classList.remove('open')}};m.querySelectorAll('[data-pick-emoji]').forEach(b=>b.onclick=()=>{onPick(b.dataset.pickEmoji);m.classList.remove('open')});m.classList.add('open')}
@@ -1344,9 +1496,9 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     })
   }
   $('fmManageCategories').onclick=()=>categoryModal();$('fmAddAsset').onclick=()=>assetModal();$('fmTransactions').onclick=portfolioTransactions;$('fmRefreshPrices').onclick=refreshPrices;$('fmSaveSettings').onclick=saveSettings;$('fmMarketSettings').onclick=marketSettings;$('fmBackupExport').onclick=()=>{const data={version:3,exportedAt:new Date().toISOString(),assets,categories,assetDefinitions,settings,snapshots,market,transactions};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`finance-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)};$('fmBackupImport').onclick=()=>$('fmBackupFile').click();$('fmBackupFile').onchange=e=>{const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const d=JSON.parse(r.result);if(Array.isArray(d.assets))assets=d.assets;if(Array.isArray(d.categories))categories=d.categories;if(Array.isArray(d.assetDefinitions))assetDefinitions=d.assetDefinitions;if(d.settings)settings={...settings,...d.settings};if(Array.isArray(d.snapshots))snapshots=d.snapshots;if(d.market)market=d.market;if(Array.isArray(d.transactions))transactions=d.transactions;write(STORE,assets);write(CAT,categories);write(ASSET_DEF,assetDefinitions);write(SET,settings);write(SNAP,snapshots);write(MARKET,market);write(TX,transactions);render();armTimer();toast('بکاپ با موفقیت وارد شد')}catch{toast('فایل بکاپ معتبر نیست')}};r.readAsText(f);e.target.value='' };
-  $('fmPrivacyToggle').onclick=()=>{privacy=!privacy;saveUi();renderSummary();if(assetsView==='donut')renderDonut(totalPortfolio())};$('fmAssetSearch').oninput=renderAssets;$('fmAssetSearchClear').onclick=()=>{$('fmAssetSearch').value='';renderAssets();$('fmAssetSearch').focus()};$('fmCategoryFilter').onchange=renderAssets;$('fmSourceFilter').onchange=renderAssets;
+  $('fmPrivacyToggle').onclick=()=>{privacy=!privacy;saveUi();renderSummary();renderChart();if(assetsView==='donut')renderDonut(totalPortfolio())};$('fmAssetSearch').oninput=renderAssets;$('fmAssetSearchClear').onclick=()=>{$('fmAssetSearch').value='';renderAssets();$('fmAssetSearch').focus()};$('fmCategoryFilter').onchange=renderAssets;$('fmSourceFilter').onchange=renderAssets;
   document.querySelectorAll('[data-sort-assets]').forEach(b=>b.onclick=()=>{assetSort=b.dataset.sortAssets;saveUi();document.querySelectorAll('[data-sort-assets]').forEach(x=>x.classList.toggle('active',x===b));$('fmSortPanel').hidden=true;renderAssets()});
-  $('fmDashboardToolsToggle').onclick=()=>{settings.ui={...(settings.ui||{}),searchToolsCollapsed:!settings.ui?.searchToolsCollapsed};write(SET,settings);applyDashboardUi()};$('fmChartToggle').onclick=()=>{settings.ui={...(settings.ui||{}),chartCollapsed:!settings.ui?.chartCollapsed};write(SET,settings);applyDashboardUi();if(!settings.ui.chartCollapsed)requestAnimationFrame(renderChart)};$('fmNumberTabs').querySelectorAll('[data-number-mode]').forEach(b=>b.onclick=()=>{numberMode=b.dataset.numberMode;saveUi();syncDashboardSelections();render()});$('fmViewTabs').querySelectorAll('[data-assets-view]').forEach(b=>b.onclick=()=>{assetsView=b.dataset.assetsView;saveUi();syncDashboardSelections();renderAssets()});$('fmPnlTabs').querySelectorAll('[data-pnl-period]').forEach(b=>b.onclick=()=>{pnlPeriod=b.dataset.pnlPeriod;saveUi();syncDashboardSelections();renderSummary()});$('fmChartTabs').querySelectorAll('[data-chart-unit]').forEach(b=>b.onclick=()=>{chartUnit=b.dataset.chartUnit;saveUi();syncDashboardSelections();renderChart()});
+  $('fmDashboardToolsToggle').onclick=()=>{settings.ui={...(settings.ui||{}),searchToolsCollapsed:!settings.ui?.searchToolsCollapsed};write(SET,settings);applyDashboardUi()};$('fmChartToggle').onclick=()=>{settings.ui={...(settings.ui||{}),chartCollapsed:!settings.ui?.chartCollapsed};write(SET,settings);applyDashboardUi();if(!settings.ui.chartCollapsed)requestAnimationFrame(renderChart)};$('fmNumberTabs').querySelectorAll('[data-number-mode]').forEach(b=>b.onclick=()=>{numberMode=b.dataset.numberMode;saveUi();syncDashboardSelections();render()});$('fmViewTabs').querySelectorAll('[data-assets-view]').forEach(b=>b.onclick=()=>{assetsView=b.dataset.assetsView;saveUi();syncDashboardSelections();renderAssets()});$('fmPnlTabs').querySelectorAll('[data-pnl-period]').forEach(b=>b.onclick=()=>{pnlPeriod=b.dataset.pnlPeriod;saveUi();syncDashboardSelections();renderSummary()});$('fmChartTabs').querySelectorAll('[data-chart-unit]').forEach(b=>b.onclick=()=>{chartUnit=b.dataset.chartUnit;saveUi();syncDashboardSelections();renderChart()});$('fmChartModeTabs').querySelectorAll('[data-chart-mode]').forEach(b=>b.onclick=()=>{chartMode=b.dataset.chartMode==='pnl'?'pnl':'value';saveUi();syncDashboardSelections();renderChart()});$('fmChartRangeTabs').querySelectorAll('[data-chart-range]').forEach(b=>b.onclick=()=>{chartRange=String(b.dataset.chartRange);saveUi();syncDashboardSelections();renderChart()});bindChart();
   $('fmAssetsList').addEventListener('click',e=>{const shell=e.target.closest('.fm-asset-shell');if(!shell)return;const id=shell.dataset.assetId;if(shell.dataset.vehicleId){const carNav=document.querySelector('.nav-item[data-target="car"]');carNav?.click();return}if(e.target.closest('[data-buy]'))tradeModal(id,'buy');else if(e.target.closest('[data-sell]'))tradeModal(id,'sell');else if(e.target.closest('[data-ledger]'))ledgerModal(id);else if(e.target.closest('[data-details]'))assetDetailsModal(id);else if(e.target.closest('[data-fm-edit]'))assetModal(id);else if(e.target.closest('[data-fm-delete]')){const a=assets.find(x=>String(x.id)===String(id));if(a&&confirm(`دارایی «${a.name}» حذف شود؟`)){assets=assets.filter(x=>x!==a);transactions=transactions.filter(t=>String(t.assetId)!==String(id));write(STORE,assets);write(TX,transactions);snapshot();render();toast('دارایی حذف شد')}}else if(e.target.closest('[data-note]'))noteModal(id)});
   window.addEventListener('finance-tab-changed',e=>{if(e.detail?.name==='dashboard'){requestAnimationFrame(()=>{render();requestAnimationFrame(renderChart)})}});window.addEventListener('resize',()=>{if(document.querySelector('.dashboard-page.active'))renderChart()});window.addEventListener('storage',e=>{if([STORE,CAT,SET,SNAP,MARKET,TX,ASSET_DEF].includes(e.key)){assets=read(STORE,[]);categories=read(CAT,categories);settings=read(SET,settings);snapshots=read(SNAP,[]);market=read(MARKET,market);transactions=read(TX,[]);assetDefinitions=read(ASSET_DEF,assetDefinitions);render()}});syncPortfolioEvents();snapshot();render();armTimer();
   // Shared refresh hook used by both the Instagram-style back button (home
