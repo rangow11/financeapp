@@ -230,7 +230,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function activeLoans(){return loans.filter(x=>x.active!==false)}
   function progress(l){return Math.max(0,Math.min(100,(Number(l.paid)||0)/(Number(l.count)||1)*100))}
   function copy(text){if(!text)return;if(navigator.clipboard?.writeText)navigator.clipboard.writeText(text).catch(()=>{});else{const t=document.createElement('textarea');t.value=text;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove()}}
-  function renderSummary(){const a=activeLoans(), total=a.reduce((s,x)=>s+toNum(x.total),0), overdue=a.reduce((s,x)=>s+toNum(x.overdueAmount),0), monthly=a.reduce((s,x)=>s+toNum(x.installment),0);summary.innerHTML=`<div><span>وام فعال</span><b>${fmt(a.length)}</b></div><div><span>مجموع وام</span><b>${money(total)}</b></div><div><span>مجموع قسط‌های این ماه</span><b>${money(monthly)}</b></div><div><span>مجموع معوقه</span><b>${money(overdue)}</b></div>`;}
+  function renderSummary(){const a=activeLoans(), total=a.reduce((s,x)=>s+toNum(x.total),0), overdue=a.reduce((s,x)=>s+effOverdue(x).amount,0), monthly=a.reduce((s,x)=>s+toNum(x.installment),0);summary.innerHTML=`<div><span>وام فعال</span><b>${fmt(a.length)}</b></div><div><span>مجموع وام</span><b>${money(total)}</b></div><div><span>مجموع قسط‌های این ماه</span><b>${money(monthly)}</b></div><div><span>مجموع معوقه</span><b>${money(overdue)}</b></div>`;}
   function actionHtml(l){return `<div class="loan-actions" data-actions="${l.id}" aria-label="عملیات وام"><button class="loan-act edit" data-act="edit" title="ویرایش" aria-label="ویرایش"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 16.8-.7 3.8 3.8-.7L18.5 8.5a2.1 2.1 0 0 1-3-3L4 16.8Z" stroke="currentColor" stroke-width="1.7"/><path d="m14.5 7.5 2 2" stroke="currentColor" stroke-width="1.7"/></svg></button><button class="loan-act note" data-act="note" title="یادداشت" aria-label="یادداشت"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4.8h12a1.5 1.5 0 0 1 1.5 1.5v9.9L15 20H6A1.5 1.5 0 0 1 4.5 18.5v-12A1.5 1.5 0 0 1 6 4.8Z" stroke="currentColor" stroke-width="1.7"/><path d="M8 9h8M8 13h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button><button class="loan-act delete" data-act="delete" title="حذف" aria-label="حذف"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 7h14M9 7V4.8h6V7M8 10v7M12 10v7M16 10v7M6.5 7l.7 13h9.6l.7-13" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>`}
   // Loan-local Jalali date helpers. Do not depend on the Car manager's private scope.
   function jToday(){
@@ -245,7 +245,32 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     return Number.isFinite(y)&&Number.isFinite(m)&&Number.isFinite(d) ? `${fmt(d)} ${months[m-1]||''} ${fmt(y)}` : String(v);
   }
   function localToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
-  function dueInfo(l){const overdueCount=Math.max(0,Number(l.overdueCount)||0);if(overdueCount>0){const days=l.nextDue?Math.round((new Date(l.nextDue+'T12:00:00')-new Date(localToday()+'T12:00:00'))/86400000):null;return{status:'overdue',days,label:`${fmt(overdueCount)} قسط معوقه`}}if(!l.nextDue)return{status:'ok',days:null,label:'سررسید ثبت نشده'};const today=new Date(localToday()+'T12:00:00'),due=new Date(l.nextDue+'T12:00:00'),days=Math.round((due-today)/86400000);if(days<=0)return{status:'overdue',days,label:days===0?'سررسید امروز':`${fmt(Math.abs(days))} روز گذشته`};if(days<=3)return{status:'soon',days,label:`${fmt(days)} روز تا سررسید`};return{status:'ok',days,label:'سررسید در موعد'}}
+  // Overdue installments = manually recorded ones + monthly due dates that have already passed
+  // (starting from nextDue). Non-mutating, so payment/undo logic keeps working on stored state.
+  function missedByDate(l){
+    if(!l||!l.nextDue)return 0;
+    const total=Math.max(0,Number(l.count)||0),paid=Math.max(0,Number(l.paid)||0);
+    if(total>0&&paid>=total)return 0;
+    const today=new Date(localToday()+'T12:00:00');
+    let date=l.nextDue,n=0;const tmp={nextDue:date};
+    while(n<600){
+      const d=new Date(tmp.nextDue+'T12:00:00');
+      if(Number.isNaN(d.getTime())||d>=today)break;
+      n++;advanceNextDue(tmp,1);
+    }
+    if(total>0)n=Math.min(n,Math.max(0,total-paid));
+    return n;
+  }
+  function effOverdue(l){
+    const inst=Math.max(0,toNum(l.installment)),missed=missedByDate(l);
+    const count=Math.max(0,Number(l.overdueCount)||0)+missed;
+    let amount=toNum(l.overdueAmount);
+    if(amount<=0&&Number(l.overdueCount)>0)amount=Number(l.overdueCount)*inst;
+    amount+=missed*inst;
+    amount=Math.max(0,amount-(missed?Math.max(0,toNum(l.currentInstallmentPaid)):0));
+    return {count,amount,missed};
+  }
+  function dueInfo(l){const eo=effOverdue(l);if(eo.count>0){const days=l.nextDue?Math.round((new Date(l.nextDue+'T12:00:00')-new Date(localToday()+'T12:00:00'))/86400000):null;return{status:'overdue',days,label:`${fmt(eo.count)} قسط معوقه`}}if(!l.nextDue)return{status:'ok',days:null,label:'سررسید ثبت نشده'};const today=new Date(localToday()+'T12:00:00'),due=new Date(l.nextDue+'T12:00:00'),days=Math.round((due-today)/86400000);if(days===0)return{status:'soon',days,label:'سررسید امروز'};if(days<0)return{status:'overdue',days,label:`${fmt(Math.abs(days))} روز گذشته`};if(days<=3)return{status:'soon',days,label:`${fmt(days)} روز تا سررسید`};return{status:'ok',days,label:'سررسید در موعد'}}
   let loanStatusFilter='all';
   let loanSortMode='due';
 
@@ -255,7 +280,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     if(loanSortMode==='installmentAsc') return toNum(a.installment)-toNum(b.installment);
     if(loanSortMode==='totalDesc') return toNum(b.total)-toNum(a.total);
     if(loanSortMode==='totalAsc') return toNum(a.total)-toNum(b.total);
-    if(loanSortMode==='overdueDesc') return toNum(b.overdueAmount)-toNum(a.overdueAmount) || toNum(b.overdueCount)-toNum(a.overdueCount);
+    if(loanSortMode==='overdueDesc') return effOverdue(b).amount-effOverdue(a).amount || effOverdue(b).count-effOverdue(a).count;
     if(loanSortMode==='paidDesc') return toNum(b.paid)-toNum(a.paid);
     if(da.days===null)return 1;
     if(db.days===null)return -1;
@@ -303,7 +328,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       const p=progress(l),info=dueInfo(l),wrap=document.createElement('div');
       wrap.className=`loan-swipe due-${info.status}`;
       wrap.dataset.id=l.id;
-      wrap.innerHTML=actionHtml(l)+`<article class="loan-card"><div class="loan-card-status"><button class="loan-paid-btn" data-act="paid" ${Number(l.count||0)>0&&Number(l.paid||0)>=Number(l.count||0)?'disabled':''}>✓ پرداخت شد</button><div class="loan-card-names"><span class="loan-bank">${esc(l.bank)}</span><i class="name-divider" aria-hidden="true"></i><h3>${esc(l.borrower)}</h3></div><div class="loan-status-info"><span>${info.status==='overdue'?'معوقه':info.status==='soon'?'نزدیک به سررسید':'در موعد'}</span><small>${info.label}</small></div><button class="details-btn" data-act="details" title="جزئیات" aria-label="جزئیات"></button></div><div class="loan-card-top"><div class="loan-main-stats"><div><span>قسط ماهانه</span><b>${money(l.installment)}</b></div></div><div class="loan-main-stats"><div><span>سررسید بعدی</span><b>${g2jDate(l.nextDue)}</b></div></div></div><div class="loan-bottom"><div class="loan-overdue-row"><span>معوقه <b>${fmt(l.overdueCount||0)} قسط</b></span><strong>${money(l.overdueAmount||0)}</strong></div><div class="loan-progress"><div style="width:${p}%"></div></div><div class="loan-progress-meta"><span>${fmt(p)}٪ پرداخت شده</span><span>${fmt(l.paid||0)} از ${fmt(l.count||0)} قسط</span></div></div></article>`;
+      wrap.innerHTML=actionHtml(l)+`<article class="loan-card"><div class="loan-card-status"><button class="loan-paid-btn" data-act="paid" ${Number(l.count||0)>0&&Number(l.paid||0)>=Number(l.count||0)?'disabled':''}>✓ پرداخت شد</button><div class="loan-card-names"><span class="loan-bank">${esc(l.bank)}</span><i class="name-divider" aria-hidden="true"></i><h3>${esc(l.borrower)}</h3></div><div class="loan-status-info"><span>${info.status==='overdue'?'معوقه':info.status==='soon'?'نزدیک به سررسید':'در موعد'}</span><small>${info.label}</small></div><button class="details-btn" data-act="details" title="جزئیات" aria-label="جزئیات"></button></div><div class="loan-card-top"><div class="loan-main-stats"><div><span>قسط ماهانه</span><b>${money(l.installment)}</b></div></div><div class="loan-main-stats"><div><span>سررسید بعدی</span><b>${g2jDate(l.nextDue)}</b></div></div></div><div class="loan-bottom"><div class="loan-overdue-row"><span>معوقه <b>${fmt(effOverdue(l).count)} قسط</b></span><strong>${money(effOverdue(l).amount)}</strong></div><div class="loan-progress"><div style="width:${p}%"></div></div><div class="loan-progress-meta"><span>${fmt(p)}٪ پرداخت شده</span><span>${fmt(l.paid||0)} از ${fmt(l.count||0)} قسط</span></div></div></article>`;
       list.appendChild(wrap);
       bindSwipe(wrap);
     });
@@ -332,7 +357,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function g2jParts(gy,gm,gd){const gdm=[0,31,59,90,120,151,181,212,243,273,304,334],gy2=gm>2?gy+1:gy,div=(a,b)=>Math.floor(a/b);let days=355666+365*gy+div(gy2+3,4)-div(gy2+99,100)+div(gy2+399,400)+gd+gdm[gm-1],jy=-1595+33*div(days,12053);days%=12053;jy+=4*div(days,1461);days%=1461;if(days>365){jy+=div(days-1,365);days=(days-1)%365}return[jy,days<186?1+div(days,31):7+div(days-186,30),1+(days<186?days%31:(days-186)%30)]}
   function j2gParts(jy,jm,jd){const div=(a,b)=>Math.floor(a/b),j=jy+1595;let days=-355668+365*j+div(j,33)*8+div(j%33+3,4)+jd+(jm<7?(jm-1)*31:(jm-7)*30+186),gy=400*div(days,146097);days%=146097;if(days>36524){gy+=100*div(--days,36524);days%=36524;if(days>=365)days++}gy+=4*div(days,1461);days%=1461;if(days>365){gy+=div(days-1,365);days=(days-1)%365}let gd=days+1,ml=[31,(gy%4===0&&gy%100!==0)||gy%400===0?29:28,31,30,31,30,31,31,30,31,30,31],gm=0;while(gd>ml[gm]){gd-=ml[gm++]}return[gy,gm+1,gd]}
   function monthKeyFromDate(date){if(!date)return'';const d=new Date(date+'T12:00:00');if(Number.isNaN(d.getTime()))return'';const j=g2jParts(d.getFullYear(),d.getMonth()+1,d.getDate());return jalaliMonthKey(j[0],j[1]);}
-  function openPaidModal(l){payingLoan=l;$('loanPaidModalTitle').textContent=`ثبت پرداخت · ${l.bank}`;$('loanPaidMonthHint').textContent=`قسط ماهانه: ${money(l.installment)} · معوقه فعلی: ${money(l.overdueAmount||0)}`;$('loanPaymentAmount').value='';openModal(paidModal);setTimeout(()=>$('loanPaymentAmount')?.focus(),120)}
+  function openPaidModal(l){payingLoan=l;$('loanPaidModalTitle').textContent=`ثبت پرداخت · ${l.bank}`;$('loanPaidMonthHint').textContent=`قسط ماهانه: ${money(l.installment)} · معوقه فعلی: ${money(effOverdue(l).amount)}`;$('loanPaymentAmount').value='';openModal(paidModal);setTimeout(()=>$('loanPaymentAmount')?.focus(),120)}
   function advanceNextDue(l,count){let date=l.nextDue||localToday();for(let i=0;i<count;i++){const base=new Date(date+'T12:00:00');const j=g2jParts(base.getFullYear(),base.getMonth()+1,base.getDate()),[ny,nm]=shiftJalaliMonth(j[0],j[1],1),day=Math.min(j[2],nm<7?31:30),g=j2gParts(ny,nm,day);date=`${g[0]}-${String(g[1]).padStart(2,'0')}-${String(g[2]).padStart(2,'0')}`}l.nextDue=date}
   let payingLoan=null;
   let paymentSubmitting=false;
@@ -527,7 +552,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     if(activeTab==='transactions'){
       content=loanTransactionsHtml(l);
     }else{
-      content=`<div class="detail-progress"><div><b>${fmt(p)}٪</b><span>پیشرفت پرداخت</span></div><div class="big-progress"><i style="width:${p}%"></i></div></div><div class="detail-grid">${pay('نام وام‌گیرنده',l.borrower)}${pay('مبلغ کل وام',money(l.total))}${pay('مبلغ هر قسط',money(l.installment))}${pay('تعداد کل اقساط',fmt(l.count))}${pay('اقساط پرداخت‌شده',fmt(l.paid))}${pay('اقساط باقی‌مانده',fmt(Math.max(0,l.count-l.paid)))}${pay('مبلغ پرداختی به قسط جاری',money(l.currentInstallmentPaid||0))}${pay('سررسید بعدی',g2jDate(l.nextDue))}${pay('اقساط معوقه',fmt(l.overdueCount))}${pay('مبلغ معوقه',money(l.overdueAmount))}${pay('نرخ سود سالانه',l.rate?esc(l.rate)+'٪':'—')}${pay('مدت وام',l.term||'—')}</div><div class="payment-details"><h3>اطلاعات پرداخت</h3>${pay('شماره کارت',l.card,true,l.showCard)}${pay('شماره شبا',l.iban,true,l.showIban)}${pay('شماره حساب',l.account,true,l.showAccount)}</div><div class="loan-notes"><h3>یادداشت</h3><p>${esc(l.notes||'یادداشتی ثبت نشده است.')}</p></div>`;
+      content=`<div class="detail-progress"><div><b>${fmt(p)}٪</b><span>پیشرفت پرداخت</span></div><div class="big-progress"><i style="width:${p}%"></i></div></div><div class="detail-grid">${pay('نام وام‌گیرنده',l.borrower)}${pay('مبلغ کل وام',money(l.total))}${pay('مبلغ هر قسط',money(l.installment))}${pay('تعداد کل اقساط',fmt(l.count))}${pay('اقساط پرداخت‌شده',fmt(l.paid))}${pay('اقساط باقی‌مانده',fmt(Math.max(0,l.count-l.paid)))}${pay('مبلغ پرداختی به قسط جاری',money(l.currentInstallmentPaid||0))}${pay('سررسید بعدی',g2jDate(l.nextDue))}${pay('اقساط معوقه',fmt(effOverdue(l).count))}${pay('مبلغ معوقه',money(effOverdue(l).amount))}${pay('نرخ سود سالانه',l.rate?esc(l.rate)+'٪':'—')}${pay('مدت وام',l.term||'—')}</div><div class="payment-details"><h3>اطلاعات پرداخت</h3>${pay('شماره کارت',l.card,true,l.showCard)}${pay('شماره شبا',l.iban,true,l.showIban)}${pay('شماره حساب',l.account,true,l.showAccount)}</div><div class="loan-notes"><h3>یادداشت</h3><p>${esc(l.notes||'یادداشتی ثبت نشده است.')}</p></div>`;
     }
     $('loanDetailsBody').innerHTML=tabs+content;
     $('loanDetailsBody').querySelectorAll('.mini-copy').forEach(b=>b.onclick=()=>{copy(b.dataset.copy);b.textContent='کپی شد';setTimeout(()=>b.textContent='کپی',1000)});
@@ -1020,6 +1045,9 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     write(STORE,assets);
     return p;
   }
+  // Dollar rate used for the dashboard total and the chart = Tether price in toman (USDT_IRT).
+  // Falls back to the plain USD quote only if Tether has never been fetched.
+  function usdRate(){return Number(market.USDT_IRT?.price)||Number(market.USDT?.price)||Number(market.USD?.price)||0}
   const dayKey=ts=>{const d=new Date(ts);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
   // One record per calendar day (updated in place on every price refresh, so the
   // day's last value wins): t = last update time, d = day, v = total value,
@@ -1028,7 +1056,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
     const now=Date.now(),v=totalPortfolio(),p=pnl(),cost=totalCost(),day=dayKey(now);
     snapshots=snapshots.filter(x=>Number(x.t)>1e12&&now-x.t<370*864e5);
     if(Number.isFinite(v)&&(v>0||cost>0)){
-      const rec={t:now,d:day,v,p:Number.isFinite(p)?p:0,c:cost,usd:Number(market.USD?.price)||0,gold:Number(market.GOLD18?.price)||0};
+      const rec={t:now,d:day,v,p:Number.isFinite(p)?p:0,c:cost,usd:usdRate(),gold:Number(market.GOLD18?.price)||0};
       const i=snapshots.findIndex(x=>(x.d||dayKey(x.t))===day);
       if(i>=0)snapshots[i]=rec;else snapshots.push(rec);
       snapshots.sort((a,b)=>a.t-b.t);
@@ -1040,7 +1068,7 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   function percent(v,b){return b?100*v/b:0}
   function money(n){if(numberMode==='million'){const m=(Number(n)||0)/1e6;return `${m.toFixed(m>=100?0:1).replace(/\.0$/,'')}M`}return `${fmt(n)} تومان`}
   function masked(text='') { return privacy?'••••••':text }
-  function renderSummary(){const t=totalPortfolio(),usd=Number(market.USD?.price)||0,gold=Number(market.GOLD18?.price)||0;$('fmTotalToman').textContent=masked(money(t));$('fmTotalDollar').textContent=masked(usd?`${fmt(t/usd)} $`:'—');$('fmTotalGold').textContent=masked(gold?`${fmt(t/gold)} گرم`:'—');const p=periodPnl(pnlPeriod),base=pnlPeriod==='cumulative'?totalCost():(priorSnapshot(pnlPeriod==='daily'?1:30)?.v??t);$('fmPnlValue').textContent=masked(`${p>=0?'+':''}${money(Math.abs(p))}`);$('fmPnlValue').className=p>=0?'fm-up':'fm-down';$('fmPnlRate').textContent=masked(`${p>=0?'▲':'▼'} ${Math.abs(percent(p,base)).toFixed(2)}٪`);$('fmPnlRate').className=p>=0?'fm-up':'fm-down';$('fmPrivacyToggle').innerHTML=privacy?'<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 10.6a2.7 2.7 0 003.8 3.8M9.9 5.2A9.8 9.8 0 0112 6c6.1 0 9.8 6 9.8 6a15.7 15.7 0 01-3.2 3.7M6.4 6.4C3.8 8.2 2.2 12 2.2 12s3.7 6 9.8 6c.7 0 1.4-.1 2-.2"/></svg>':'<svg viewBox="0 0 24 24"><path d="M2.2 12s3.7-6 9.8-6 9.8 6 9.8 6-3.7 6-9.8 6-9.8-6-9.8-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>'}
+  function renderSummary(){const t=totalPortfolio(),usd=usdRate(),gold=Number(market.GOLD18?.price)||0;$('fmTotalToman').textContent=masked(money(t));$('fmTotalDollar').textContent=masked(usd?`${fmt(t/usd)} $`:'—');$('fmTotalGold').textContent=masked(gold?`${fmt(t/gold)} گرم`:'—');const p=periodPnl(pnlPeriod),base=pnlPeriod==='cumulative'?totalCost():(priorSnapshot(pnlPeriod==='daily'?1:30)?.v??t);$('fmPnlValue').textContent=masked(`${p>=0?'+':''}${money(Math.abs(p))}`);$('fmPnlValue').className=p>=0?'fm-up':'fm-down';$('fmPnlRate').textContent=masked(`${p>=0?'▲':'▼'} ${Math.abs(percent(p,base)).toFixed(2)}٪`);$('fmPnlRate').className=p>=0?'fm-up':'fm-down';$('fmPrivacyToggle').innerHTML=privacy?'<svg viewBox="0 0 24 24"><path d="M3 3l18 18M10.6 10.6a2.7 2.7 0 003.8 3.8M9.9 5.2A9.8 9.8 0 0112 6c6.1 0 9.8 6 9.8 6a15.7 15.7 0 01-3.2 3.7M6.4 6.4C3.8 8.2 2.2 12 2.2 12s3.7 6 9.8 6c.7 0 1.4-.1 2-.2"/></svg>':'<svg viewBox="0 0 24 24"><path d="M2.2 12s3.7-6 9.8-6 9.8 6 9.8 6-3.7 6-9.8 6-9.8-6-9.8-6Z"/><circle cx="12" cy="12" r="2.7"/></svg>'}
   const fmtUsd=n=>{n=Number(n)||0;const d=n>=1000?0:n>=1?2:n>=0.01?4:6;return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:d})};
   function renderMarket(){const track=$('fmMarketTrack');const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({name:x.name,key:x.key,keyword:x.keyword,category:x.category,enabled:true}))).filter(x=>x.enabled!==false);const set=()=>`<div class="fm-market-set">${defs.map(x=>{const v=market[x.key]||{},p=Number(v.price)||0,ch=Number(v.change)||0;const isCr=x.category==='رمزارزها'&&norm(x.key)!=='usdt'&&norm(x.keyword)!=='usdt';let usd=Number(v.usd)||0;if(isCr&&!usd&&p){const tr=Number(market.USDT?.price)||0;if(tr>0)usd=p/tr}const priceTxt=isCr&&usd>0?`<bdi dir="ltr">$${fmtUsd(usd)}</bdi>`:(p?fmt(p):'—');return `<article class="fm-market-card"><div class="fm-market-name"><b>${esc(x.name)}</b><span>${esc(x.key)}</span></div><div class="fm-market-price ${ch>0?'fm-up':ch<0?'fm-down':'fm-neutral'}">${priceTxt} <span>(${ch>0?'+':''}${ch?ch.toFixed(2):'۰'}٪)</span></div></article>`}).join('')}</div>`;track.innerHTML=set()+set()}
   function renderFilters(){$('fmCategoryFilter').innerHTML='<option value="all">همه دسته‌ها</option>'+categories.map(c=>`<option value="${esc(c.id)}">${esc(c.icon)} ${esc(c.name)}</option>`).join('')}
@@ -1447,6 +1475,54 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
       }
     });
   }
+  // ---- Tehran stock exchange (TSETMC) symbols via BRSAPI: Tsetmc/AllSymbols.php ----
+  // Used for assets in API mode whose keyword is a bourse symbol (e.g. کهربا, فولاد, وبملت).
+  // TSETMC prices are in Rial, the app works in Toman, so they are divided by 10.
+  const BOURSE_TYPES=[1,2,3,4,5];            // symbol groups tried in order until every symbol is found
+  const BOURSE_PRICE_FIELDS=['pl','pc','py']; // pl = last trade, pc = closing price, py = yesterday close
+  const normSym=s=>String(s??'').replace(/[يى]/g,'ی').replace(/ك/g,'ک').replace(/[\u200c\u200e\u200f\s_\-ـ]/g,'').replace(/[۰-۹]/g,d=>'۰۱۲۳۴۵۶۷۸۹'.indexOf(d)).replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d)).toLowerCase();
+  function isMarketKeyword(k){
+    const n=norm(k);if(!n)return false;
+    return (settings.marketDefs?.length?settings.marketDefs:marketDefs).some(d=>norm(d.keyword)===n||norm(d.key)===n||norm(d.name)===n);
+  }
+  function brsList(data){
+    if(Array.isArray(data))return data;
+    if(data&&typeof data==='object'){
+      for(const v of Object.values(data))if(Array.isArray(v)&&v.length&&typeof v[0]==='object')return v;
+      const vals=Object.values(data);if(vals.length&&vals.every(v=>v&&typeof v==='object'&&'l18' in v))return vals;
+    }
+    return [];
+  }
+  function boursePrice(item){for(const f of BOURSE_PRICE_FIELDS){const v=Number(item?.[f]);if(Number.isFinite(v)&&v>0)return v}return 0}
+  async function fetchBourseType(type){
+    const key=(settings.bourseApiKey||settings.apiKey||'').trim();
+    if(!key)throw new Error('BRSAPI token missing');
+    const base=(settings.bourseApiUrl||'https://Api.BrsApi.ir').replace(/\/+$/,'');
+    const res=await fetch(`${base}/Tsetmc/AllSymbols.php?key=${encodeURIComponent(key)}&type=${type}`,{headers:{Accept:'application/json'},cache:'no-store'});
+    if(!res.ok)throw new Error(`BRSAPI Tsetmc ${res.status}`);
+    return brsList(await res.json());
+  }
+  // keywords -> Map(normalized keyword -> {toman, rial, item}); only the symbol groups that are needed are downloaded.
+  async function fetchBourseQuotes(keywords){
+    const want=new Set(keywords.map(normSym).filter(Boolean)),found=new Map();let lastErr=null,okAny=false;
+    for(const type of BOURSE_TYPES){
+      if(found.size>=want.size)break;
+      let list;
+      try{list=await fetchBourseType(type);okAny=true}catch(e){lastErr=e;if(type===BOURSE_TYPES[0]&&/token|40[13]/.test(String(e.message)))break;continue}
+      for(const item of list){
+        const rial=boursePrice(item);if(!rial)continue;
+        for(const k of [normSym(item.l18),normSym(item.l30)]){
+          if(!k||!want.has(k))continue;
+          const old=found.get(k),bySymbol=k===normSym(item.l18);
+          // exact symbol match beats full-name match; between duplicates the most traded one wins
+          if(!old||(bySymbol&&!old.bySymbol)||(bySymbol===old.bySymbol&&Number(item.tvol)>Number(old.item.tvol||0)))
+            found.set(k,{rial,toman:rial/10,item,bySymbol});
+        }
+      }
+    }
+    if(!okAny&&lastErr)throw lastErr;
+    return found;
+  }
   async function fetchBrsApiData(){
     const key=(settings.apiKey||'').trim();
     if(!key)throw new Error('BRSAPI token missing');
@@ -1461,20 +1537,34 @@ document.querySelectorAll('[data-filter]').forEach(c=>c.onclick=()=>{filter=c.da
   async function refreshPrices(){
     const btn=$('fmRefreshPrices');btn.classList.add('loading');
     try{
-      const data=await fetchBrsApiData();
-      const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({...x}))).filter(x=>x.enabled!==false);
-      let count=0;
-      for(const d of defs){
-        const q=findBrsQuote(data,d.keyword||d.key||d.name,d.category==='رمزارزها');
-        if(q&&q.toman>0){const entry={price:q.toman,change:brsNumber(q.item.change_percent)??0};if(d.category==='رمزارزها'&&q.usd>0)entry.usd=q.usd;market[d.key]=entry;count++;}
+      let data=null,marketErr=null,bourseErr=null,count=0,bourseCount=0;
+      try{data=await fetchBrsApiData()}catch(e){marketErr=e;console.error('BRSAPI market refresh failed',e)}
+      const apiAssets=assets.filter(x=>(x.priceMode||'manual')==='api'&&(x.keyword||x.name));
+      // Assets whose keyword is not a market index (gold, coin, currency, crypto...) are looked up as bourse symbols.
+      const bourseAssets=apiAssets.filter(a=>!isMarketKeyword(a.keyword||a.name));
+      let bq=new Map();
+      if(bourseAssets.length){try{bq=await fetchBourseQuotes(bourseAssets.map(a=>a.keyword||a.name))}catch(e){bourseErr=e;console.error('BRSAPI bourse refresh failed',e)}}
+      if(data){
+        const defs=(settings.marketDefs?.length?settings.marketDefs:marketDefs.map(x=>({...x}))).filter(x=>x.enabled!==false);
+        for(const d of defs){
+          const q=findBrsQuote(data,d.keyword||d.key||d.name,d.category==='رمزارزها');
+          if(q&&q.toman>0){const entry={price:q.toman,change:brsNumber(q.item.change_percent)??0};if(d.category==='رمزارزها'&&q.usd>0)entry.usd=q.usd;market[d.key]=entry;count++;}
+        }
       }
-      for(const a of assets.filter(x=>(x.priceMode||'manual')==='api'&&(x.keyword||x.name))){
-        const q=findBrsQuote(data,a.keyword||a.name,a.category==='crypto'||isCryptoKeyword(a.keyword||a.name));
+      for(const a of apiAssets){
+        const kw=a.keyword||a.name,bourse=bq.get(normSym(kw));
+        if(bourse){a.currentPrice=Math.round(bourse.toman);delete a.apiUsdPrice;bourseCount++;continue}
+        if(!data)continue;
+        const q=findBrsQuote(data,kw,a.category==='crypto'||isCryptoKeyword(kw));
         if(q&&q.toman>0){a.currentPrice=Math.round(q.toman);if(q.usd!=null)a.apiUsdPrice=q.usd;else delete a.apiUsdPrice;}
       }
-      updateTickerFromBrsData(data);
+      if(data)updateTickerFromBrsData(data);
+      if(!data&&!bourseCount&&(marketErr||bourseErr)){throw marketErr||bourseErr}
       write(STORE,assets);write(MARKET,market);localStorage.setItem('finance-market-updated-at',String(Date.now()));snapshot();render();
-      toast(count?`${count} قیمت بروزرسانی شد`:'قیمت قابل تشخیص از BRSAPI دریافت نشد');
+      const total=count+bourseCount;
+      let msg=total?`${total} قیمت بروزرسانی شد${bourseCount?` (${bourseCount} نماد بورسی)`:''}`:'قیمت قابل تشخیص از BRSAPI دریافت نشد';
+      if(bourseAssets.length&&bourseCount<bourseAssets.length)msg+=bourseErr?' · دریافت قیمت بورس انجام نشد':' · برخی نمادهای بورسی پیدا نشدند';
+      toast(msg);
     }catch(e){
       console.error('BRSAPI refresh failed',e);
       toast('بروزرسانی BRSAPI انجام نشد؛ توکن یا دسترسی API را بررسی کن');
